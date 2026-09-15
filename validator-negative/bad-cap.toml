@@ -1,0 +1,68 @@
+# Bitty plugin manifest.
+#
+# File name, keys, and limits are the accepted v1 contract in bitty-docs
+# `docs/specifications/plugin-platform-rfc.md` (OQ-012). The plugin manager and
+# the host parse this file independently before any plugin code runs.
+#
+# `just manifest` validates this file; `bitty-plugin-lint` from
+# bitty-plugin-sdk (R-SDK-2) is the authoritative check against the same
+# accepted contract.
+
+[plugin]
+id = "bitty-terminal.file-manager"
+name = "File Manager"
+version = "0.1.0"
+description = "Tiled Panel file manager with fs.read + optional fs.write, bounded 8KiB/32/64 PR-1..12"
+license = "MIT"
+
+[compat]
+# Unchanged from the former bundled `bitty-terminal.file-manager` realization.
+bitty = ">=0.1,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+# Deny by default: omit this table entirely when the plugin needs no authority.
+# Unknown identifiers fail validation and there is no allow-all identifier.
+#
+# `panel.provider` + `panel.create` back the tiled Panel Runtime registration.
+# `terminal.semantic-read` gates `bitty.terminal.snapshot`, the read-only
+# cwd/title observation the panel refreshes from. Filesystem access is
+# declared via `[[capabilities.filesystem]]` below, never via a boolean key:
+# `read` backs directory listing/preview, `write` is optional and gates only
+# user-confirmed rename/move/copy. All identifiers are unchanged from the
+# former bundled manifest; the split changes no identity.
+panel.provider = true
+unknown.capability = true
+panel.create = true
+terminal.semantic-read = true
+
+# Directory listing/preview read scope. Patterns resolve against real paths;
+# symlinks and devices are rejected per host policy. Unchanged from the
+# bundled manifest.
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/projects/**"]
+
+# Optional mutation scope for user-confirmed rename/move/copy. When this grant
+# is absent, mutations fail closed. Unchanged from the bundled manifest.
+[[capabilities.filesystem]]
+access = "write"
+paths = ["~/projects/**"]
+
+[lazy]
+# Static triggers let the host register the plugin without creating a VM.
+# Commands are plugin-qualified: `<plugin-id>:<resource>`.
+# All three commands and three events are unchanged from the bundled manifest.
+commands = [
+  "bitty-terminal.file-manager:open",
+  "bitty-terminal.file-manager:preview",
+  "bitty-terminal.file-manager:rename",
+]
+# Events the plugin subscribes to during activation. Observation events
+# refresh the cached snapshot-derived state; handlers never touch the
+# filesystem.
+events = [
+  "terminal.cwd-changed",
+  "terminal.title-changed",
+  "focus.changed",
+]
