@@ -80,8 +80,14 @@ test-luals:
 test-manifest:
     bun tests/check-manifest-lint.mjs
 
+# R24: assert every `validator-negative/*.toml` fixture is rejected by the
+# local manifest validator (`base.toml` is the accepted positive control).
+# Fails when the fixture directory or a required fixture is missing.
+test-negative:
+    bun tests/check-manifest-negative.mjs
+
 # Run all behavior and conformance tests.
-test: test-lua test-luals test-manifest
+test: test-lua test-luals test-manifest test-negative
 
 # Aggregate gate run locally and in CI.
 check: lint fmt-check manifest lua test

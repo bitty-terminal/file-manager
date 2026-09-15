@@ -17,7 +17,7 @@ CI; the individual suites are also available directly.
 ## Commands
 
 ```sh
-just test            # lua5.4 runner + LuaLS check + SDK linter wrapper
+just test            # lua5.4 runner + LuaLS check + SDK/manifest fixture checks
 
 # Behavior tests: scope, listings, deferred panel placeholder, lifecycle,
 # capabilities.
@@ -30,6 +30,10 @@ just test-luals
 # Authoritative manifest check (SDK R-SDK-2);
 # BITTY_PLUGIN_LINT=/path/to/bitty-plugin-sdk/src/cli.ts forces the SDK CLI.
 just test-manifest
+
+# Negative manifest fixtures (R24): every `validator-negative/*.toml` must be
+# rejected; `base.toml` is the accepted positive control.
+just test-negative
 ```
 
 ## Layout
@@ -47,6 +51,7 @@ just test-manifest
 | `lua-defs/negative-fixture.lua` | Excluded-surface fixture that LuaLS must reject.                                            |
 | `check-lua-luals.mjs`           | Positive/negative LuaLS workspace check.                                                    |
 | `check-manifest-lint.mjs`       | Runs `bitty-plugin-lint` when discoverable.                                                 |
+| `check-manifest-negative.mjs`   | Rejects every `validator-negative/*.toml` fixture; accepts the `base.toml` control.         |
 
 ## Known gaps
 

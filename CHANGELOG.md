@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   roots work, containment is checked segment-wise, and validation fails closed
   when no root is available. `..` is denied only as a whole `/`-segment, so
   `a..b` and `backup..tar.gz` are admitted while `x/../y` is rejected.
+- **Bare `/` root (R24 follow-up):** `normalize_root` now treats a path-less
+  `/` root (or an all-slash run) as unavailable rather than an allow-all root.
+  `is_within_root("/", "/etc/passwd")` stays false, the root no longer contains
+  itself, and `join_root("/", "foo")` / `resolve("/", "foo")` fail closed
+  instead of emitting the non-canonical `//foo`. The git-panel reference keeps
+  the raw `//foo` join; this package deliberately rejects it.
 - **Headless commands (H-FM-01):** `open`/`preview`/`rename` refresh the
   semantic snapshot behind `pcall` and proceed with caller-supplied or
   settings-derived paths and root, so a missing focused terminal or a denied
@@ -46,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Negative-fixture automation (R24):** `just test-negative`
+  (`tests/check-manifest-negative.mjs`, wired into `just test`/`just check`)
+  rejects every `validator-negative/*.toml` fixture through
+  `scripts/validate-manifest.mjs` and accepts the `base.toml` positive control,
+  so the validator cannot silently stop rejecting denied manifests. The check
+  fails when the fixture directory, the control, or a required negative fixture
+  is missing instead of passing vacuously.
 - **Initial independent package (OQ-053, `bitty` CTX-0399):**
   `bitty-terminal.file-manager` extracted from the `bitty` bundled-disabled
   catalog into this repository with no identity change (id, commands, events).
