@@ -62,12 +62,20 @@ function M.is_absolute_path(path)
 end
 
 -- Root without trailing slashes, or `nil` fail-closed when invalid or
--- carrying a `..` segment.
+-- carrying a `..` segment. A bare `/` (or an all-slash run) is path-less: it
+-- names no boundary, so it is treated as unavailable rather than an allow-all
+-- root. That keeps the edge fail-closed (`is_within_root("/", "/etc/passwd")`
+-- is false, not true) and canonical (`join_root("/", "foo")` yields `nil`
+-- instead of the non-canonical `//foo`), unlike the git-panel reference which
+-- keeps the raw `//foo` join.
 function M.normalize_root(root)
   if not M.is_valid_path(root) then
     return nil
   end
   local base = M.trim_trailing_slash(root)
+  if base == "/" then
+    return nil
+  end
   for segment in string.gmatch(base, "[^/]+") do
     if segment == ".." then
       return nil

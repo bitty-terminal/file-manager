@@ -33,7 +33,8 @@ beyond the manifest `[compat]` ranges.
 | `lua/file-manager/scope.lua`    | Host-free root-parameterized scope checks (arbitrary roots; no hardcoded prefix).                |
 | `lua/file-manager/listing.lua`  | Host-free bounded file listings, filters, and sorting.                                           |
 | `lua/file-manager/scene.lua`    | Intentional placeholder for deferred panel presentation (see the M-FM-05 note below).            |
-| `tests/`                        | Lua 5.4 behavior suite, LuaLS conformance, and the SDK manifest-lint wrapper.                    |
+| `tests/`                        | Lua 5.4 behavior suite, LuaLS conformance, SDK manifest-lint, and negative-fixture checks.       |
+| `validator-negative/`           | Manifest fixtures the validator must reject; `base.toml` is the accepted positive control (R24). |
 | `scripts/validate-manifest.mjs` | Transitional manifest check; `bitty-plugin-lint` (R-SDK-2) is authoritative.                     |
 | `justfile`                      | Quality gates with pinned tool versions.                                                         |
 
@@ -56,7 +57,9 @@ CTX-0399; the bundled `file_manager_manifest` plus
   root, so arbitrary roots work and any path fails closed when no root is
   available. Validation is segment-wise: only a whole `/`-segment equal to
   `..` is denied, so `a..b` and `backup..tar.gz` are admitted while `x/../y`
-  is rejected;
+  is rejected. A bare `/` root is path-less and names no boundary, so it is
+  treated as unavailable: containment admits nothing (not even the root) and
+  joins fail closed, keeping the edge canonical (no non-canonical `//foo`);
 - path validation additionally fails closed on: empty paths, paths over
   `4096` bytes, and null/control characters;
 - listings truncate deterministically after sorting and deduplication: `128`
@@ -108,9 +111,12 @@ just check
 ```
 
 `just check` runs Markdown lint, Prettier format check, the transitional
-manifest validator, the pinned Lua parser, and the Lua/LuaLS/SDK-manifest test
-suites. `lua5.4` is required for the behavior suite; `lua-language-server` and
-`bitty-plugin-lint` are optional and their checks skip with exit 0 when absent.
+manifest validator, the pinned Lua parser, and the Lua/LuaLS/SDK-manifest and
+negative-fixture test suites. `lua5.4` is required for the behavior suite;
+`lua-language-server` and `bitty-plugin-lint` are optional and their checks skip
+with exit 0 when absent. `just test-negative` (R24) rejects every
+`validator-negative/*.toml` fixture and accepts the `base.toml` control, failing
+when the fixture set is missing rather than passing vacuously.
 
 ## Install
 

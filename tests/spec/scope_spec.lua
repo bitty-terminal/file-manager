@@ -54,6 +54,18 @@ function M.run(context)
   tap.equal(scope.join_root("/srv/git/repo", "."), nil, "bare dot rejected")
   tap.equal(scope.join_root("../evil", "a"), nil, "traversal root rejected")
 
+  -- R24: a bare `/` root is path-less and names no boundary, so it fails
+  -- closed instead of acting as an allow-all root. `normalize_root("/")` is
+  -- `nil`, so containment admits nothing (not even the root itself) and joins
+  -- stay canonical (no non-canonical `//foo`). The git-panel reference keeps
+  -- the raw `//foo` join; this package deliberately rejects it.
+  tap.equal(scope.normalize_root("/"), nil, "bare slash root unavailable")
+  tap.equal(scope.normalize_root("///"), nil, "all-slash root unavailable")
+  tap.equal(scope.is_within_root("/", "/etc/passwd"), false, "bare slash root admits nothing")
+  tap.equal(scope.is_within_root("/", "/"), false, "bare slash root does not contain itself")
+  tap.equal(scope.join_root("/", "foo"), nil, "bare slash root join fails closed")
+  tap.equal(scope.resolve("/", "foo"), nil, "bare slash root resolve fails closed")
+
   -- resolve: absolute must already be inside; relative is joined.
   tap.equal(scope.resolve("/srv/git/repo", "/srv/git/repo/a.txt"), "/srv/git/repo/a.txt", "absolute inside admitted")
   tap.equal(scope.resolve("/srv/git/repo", "/etc/passwd"), nil, "absolute outside denied")
