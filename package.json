@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Tiled Panel file manager plugin for the Bitty terminal.",
+  "description": "Observation-only file manager plugin for the Bitty terminal.",
   "license": "MIT",
   "devDependencies": {
     "@commitlint/cli": "21.2.2",

@@ -2,17 +2,16 @@
 --
 -- This is a test double, not a host implementation: it models only the
 -- accepted surface the file-manager uses — Plugin API v1 commands/events/
--- settings/terminal-snapshot — with fail-closed capability gates,
--- manifest-declared command/event validation, and the v1 declarative scene
--- validation (`Text`, `Row`, `Column`, `List` only, depth `16`). It performs
--- no I/O, spawns nothing, and never touches the network or the filesystem.
+-- settings/terminal-snapshot — with fail-closed capability gates and
+-- manifest-declared command/event validation. It performs no I/O, spawns
+-- nothing, and never touches the network or the filesystem.
 --
--- Filesystem access is host-mediated: the plugin validates paths against the
--- `~/projects/**` scope in pure Lua and returns bounded data rows and
--- declarative scenes; the real host performs real-path resolution and I/O
--- behind the `fs.read` / optional `fs.write` grants. The stub therefore
--- enforces no `fs.*` grant directly — scope checks are the fail-closed
--- boundary under test.
+-- Observation-only (H-FM-02): the plugin requests just
+-- `terminal.semantic-read`, so `terminal.snapshot` is the only gated surface.
+-- Filesystem access is not wired — there is no `bitty.fs` surface in Plugin
+-- API v1 and no `fs.*` grant — so the stub models no filesystem calls; the
+-- plugin's root-parameterized scope checks (arbitrary roots, no hardcoded
+-- prefix) are the fail-closed boundary under test.
 
 local MockHost = {}
 MockHost.__index = MockHost

@@ -3,6 +3,7 @@
 local MockHost = require("support.mock_host")
 
 local PLUGIN_ID = "bitty-terminal.file-manager"
+local ROOT = "/srv/git/repo"
 
 local COMMANDS = {
   PLUGIN_ID .. ":open",
@@ -16,10 +17,15 @@ local EVENTS = {
   "focus.changed",
 }
 
+-- H-FM-02: the manifest requests `terminal.semantic-read` only; the grants
+-- mirror that least-privilege set.
 local GRANTS = {
-  "panel.provider",
-  "panel.create",
   "terminal.semantic-read",
+}
+
+local DEFAULT_SNAPSHOT = {
+  title = "file-manager",
+  zones = { { metadata = { cwd = ROOT } } },
 }
 
 local function activate(host)
@@ -33,12 +39,21 @@ end
 
 local function full_host(overrides)
   overrides = overrides or {}
-  overrides.grants = overrides.grants or GRANTS
-  overrides.commands = overrides.commands or COMMANDS
-  overrides.events = overrides.events or EVENTS
-  overrides.snapshot = overrides.snapshot
-    or { title = "file-manager", zones = { { metadata = { cwd = "~/projects/foo" } } } }
-  return MockHost.new(overrides)
+  local options = {
+    plugin_id = PLUGIN_ID,
+    grants = overrides.grants or GRANTS,
+    commands = COMMANDS,
+    events = overrides.events or EVENTS,
+    settings = overrides.settings,
+    snapshot = DEFAULT_SNAPSHOT,
+  }
+  if overrides.snapshot ~= nil then
+    options.snapshot = overrides.snapshot
+  end
+  if overrides.no_snapshot then
+    options.snapshot = nil
+  end
+  return MockHost.new(options)
 end
 
 local function run(context)
@@ -72,96 +87,164 @@ local function run(context)
     tap.equal(type(err) == "table" and err.code or nil, "E_EVENT_UNDECLARED", "undeclared event code")
   end
 
-  -- The open command serves bounded, scope-checked entries from explicit args.
+  -- The open command serves bounded, scope-checked entries from explicit args
+  -- resolved against the caller-supplied root.
   do
     local host = full_host()
     activate(host)
     local entries = host:run("open", {
-      paths = { "~/projects/b", "~/projects/a", "/etc/passwd" },
+      root = ROOT,
+      paths = { ROOT .. "/b", ROOT .. "/a", "/etc/passwd" },
     })
     tap.equal(#entries, 2, "two in-scope entries")
-    tap.equal(entries[1].path, "~/projects/a", "entries sorted")
+    tap.equal(entries[1].path, ROOT .. "/a", "entries sorted")
   end
 
-  -- The open command falls back to settings-provided entries (palette-style
-  -- adapter: the v1 surface exposes no fs enumeration, so the host or user
-  -- supplies the bounded candidate list).
+  -- The open command falls back to settings-provided entries and root
+  -- (palette-style adapter: the v1 surface exposes no fs enumeration, so the
+  -- host or user supplies the bounded candidate list).
   do
     local host = full_host({
-      settings = { entries = { "~/projects/alpha.txt", "~/projects/beta.txt" } },
+      no_snapshot = true,
+      settings = { root = ROOT, entries = { "alpha.txt", "beta.txt" } },
     })
     activate(host)
     local entries = host:run("open", {})
     tap.equal(#entries, 2, "settings entries served")
+    tap.equal(entries[1].path, ROOT .. "/alpha.txt", "settings root resolves entries")
   end
 
-  -- Out-of-scope candidates never reach the panel (fail-closed filter).
+  -- The cached snapshot cwd is the fallback root when the caller supplies
+  -- none.
   do
     local host = full_host()
     activate(host)
-    local entries = host:run("open", { paths = { "~/projects/ok.txt", "/etc/passwd" } })
-    tap.equal(#entries, 1, "outside-scope candidate dropped")
-    tap.equal(entries[1].path, "~/projects/ok.txt", "in-scope candidate kept")
+    local entries = host:run("open", { paths = { "a.txt" } })
+    tap.equal(#entries, 1, "snapshot cwd root resolves entries")
+    tap.equal(entries[1].path, ROOT .. "/a.txt", "snapshot root path")
   end
 
-  -- The preview command validates one in-scope path.
+  -- H-FM-01: no snapshot surface still opens/previews/renames when the caller
+  -- supplies a root; a snapshot-denied path must not crash the operation.
   do
-    local host = full_host()
+    local host = full_host({ no_snapshot = true })
     activate(host)
-    local entry = host:run("preview", { path = "~/projects/foo.txt" })
+    local entries = host:run("open", { root = ROOT, paths = { "b", "a", "/etc/passwd" } })
+    tap.equal(#entries, 2, "headless open works")
+    tap.equal(entries[1].path, ROOT .. "/a", "headless listing resolves and sorts")
+  end
+
+  -- H-FM-01: a denied terminal.semantic-read must not fail commands that do
+  -- not need the snapshot.
+  do
+    local host = full_host({ grants = {} })
+    activate(host)
+    local entries = host:run("open", { root = ROOT, paths = { ROOT .. "/a" } })
+    tap.equal(#entries, 1, "open survives denied snapshot")
+    local entry = host:run("preview", { root = ROOT, path = "a.txt" })
+    tap.equal(entry.name, "a.txt", "preview survives denied snapshot")
+    local pair = host:run("rename", { root = ROOT, src = "a.txt", dst = "b.txt" })
+    tap.equal(pair.dst, ROOT .. "/b.txt", "rename survives denied snapshot")
+  end
+
+  -- M-FM-04: without any root there is no boundary, so open serves nothing
+  -- and preview/rename fail closed.
+  do
+    local host = full_host({ no_snapshot = true })
+    activate(host)
+    local entries = host:run("open", { paths = { ROOT .. "/a" } })
+    tap.equal(#entries, 0, "open without a root is empty")
+    local ok, err = pcall(function()
+      return host:run("preview", { path = "a.txt" })
+    end)
+    tap.ok(not ok, "preview without a root fails closed")
+    tap.equal(type(err) == "table" and err.code or nil, "E_SCOPE_UNAVAILABLE", "preview no-root code")
+    local ok2, err2 = pcall(function()
+      return host:run("rename", { src = "a.txt", dst = "b.txt" })
+    end)
+    tap.ok(not ok2, "rename without a root fails closed")
+    tap.equal(type(err2) == "table" and err2.code or nil, "E_SCOPE_UNAVAILABLE", "rename no-root code")
+  end
+
+  -- The preview command validates one in-scope path and resolves parent and
+  -- directory presentation.
+  do
+    local host = full_host({ no_snapshot = true })
+    activate(host)
+    local entry = host:run("preview", { root = ROOT, path = "sub/foo.txt" })
     tap.equal(entry.name, "foo.txt", "preview names the file")
-    tap.equal(entry.parent, "~/projects", "preview resolves the parent")
+    tap.equal(entry.parent, ROOT .. "/sub", "preview resolves the parent")
+    tap.equal(entry.is_dir, false, "plain file is not a directory")
+    local dir_entry = host:run("preview", { root = ROOT, path = "docs/" })
+    tap.equal(dir_entry.is_dir, true, "trailing slash preview is a directory")
   end
 
-  -- Preview outside the read scope fails closed.
+  -- Preview outside the root fails closed.
   do
     local host = full_host()
     activate(host)
     local ok, err = pcall(function()
-      return host:run("preview", { path = "/etc/passwd" })
+      return host:run("preview", { root = ROOT, path = "/etc/passwd" })
     end)
     tap.ok(not ok, "out-of-scope preview fails")
     tap.equal(type(err) == "table" and err.code or nil, "E_FS_DENIED", "preview denial code")
   end
 
-  -- The rename command validates one in-scope pair (host mediates the write).
+  -- The rename command resolves one in-scope pair (host mediates the write).
   do
     local host = full_host()
     activate(host)
-    local pair = host:run("rename", { src = "~/projects/old.txt", dst = "~/projects/new.txt" })
-    tap.equal(pair.src, "~/projects/old.txt", "rename keeps src")
-    tap.equal(pair.dst, "~/projects/new.txt", "rename keeps dst")
+    local pair = host:run("rename", { root = ROOT, src = "old.txt", dst = "sub/new.txt" })
+    tap.equal(pair.src, ROOT .. "/old.txt", "rename resolves src")
+    tap.equal(pair.dst, ROOT .. "/sub/new.txt", "rename resolves dst")
+    tap.equal(pair.name, "new.txt", "rename names the dst")
   end
 
-  -- Rename outside the write scope fails closed.
+  -- L-FM-02: identical src/dst (raw or after resolution) is rejected.
   do
     local host = full_host()
     activate(host)
     local ok, err = pcall(function()
-      return host:run("rename", { src = "~/projects/ok.txt", dst = "/tmp/evil.txt" })
+      return host:run("rename", { root = ROOT, src = "a.txt", dst = "a.txt" })
+    end)
+    tap.ok(not ok, "rename rejects raw src==dst")
+    tap.equal(type(err) == "table" and err.code or nil, "E_FS_DENIED", "raw src==dst code")
+    local ok2, err2 = pcall(function()
+      return host:run("rename", { root = ROOT, src = "x/../a.txt", dst = "a.txt" })
+    end)
+    tap.ok(not ok2, "rename rejects resolved src==dst")
+    tap.equal(type(err2) == "table" and err2.code or nil, "E_FS_DENIED", "resolved src==dst code")
+  end
+
+  -- L-FM-02: renaming the scope root is refused.
+  do
+    local host = full_host()
+    activate(host)
+    local ok, err = pcall(function()
+      return host:run("rename", { root = ROOT, src = ROOT, dst = "moved" })
+    end)
+    tap.ok(not ok, "rename refuses the root")
+    tap.equal(type(err) == "table" and err.code or nil, "E_FS_DENIED", "root rename code")
+  end
+
+  -- Rename outside the root fails closed.
+  do
+    local host = full_host()
+    activate(host)
+    local ok, err = pcall(function()
+      return host:run("rename", { root = ROOT, src = "ok.txt", dst = "/tmp/evil.txt" })
     end)
     tap.ok(not ok, "out-of-scope rename fails")
     tap.equal(type(err) == "table" and err.code or nil, "E_FS_DENIED", "rename denial code")
-  end
-
-  -- Denied snapshot capability fails closed instead of serving empty data.
-  do
-    local host = full_host({ grants = { "panel.provider", "panel.create" } })
-    activate(host)
-    local ok, err = pcall(function()
-      return host:run("open", { paths = { "~/projects/foo" } })
-    end)
-    tap.ok(not ok, "denied snapshot fails the command")
-    tap.equal(type(err) == "table" and err.code or nil, "E_CAPABILITY_DENIED", "denied capability code")
   end
 
   -- Observation events refresh the cached cwd without touching the fs.
   do
     local host = full_host()
     local plugin = activate(host)
-    host.snapshot_value = { title = "moved", zones = { { metadata = { cwd = "~/projects/other" } } } }
+    host.snapshot_value = { title = "moved", zones = { { metadata = { cwd = ROOT .. "/other" } } } }
     host:publish("terminal.cwd-changed", {})
-    tap.equal(plugin.cached_cwd(), "~/projects/other", "cwd cache refreshed")
+    tap.equal(plugin.cached_cwd(), ROOT .. "/other", "cwd cache refreshed")
   end
 
   -- The plugin never spawns: no process surface exists on the mock host.

@@ -19,7 +19,8 @@ CI; the individual suites are also available directly.
 ```sh
 just test            # lua5.4 runner + LuaLS check + SDK linter wrapper
 
-# Behavior tests: scope, listings, scenes, lifecycle, capabilities.
+# Behavior tests: scope, listings, deferred panel placeholder, lifecycle,
+# capabilities.
 just test-lua
 
 # LuaLS conformance against the vendored Plugin API v1 definitions
@@ -38,9 +39,9 @@ just test-manifest
 | `run.lua`                       | Plain-Lua runner; exits non-zero on assertion failure.                                      |
 | `support/tap.lua`               | Assertion helper (no external test framework).                                              |
 | `support/mock_host.lua`         | Fail-closed in-process `bitty` stub modeling the used surface (commands, events, snapshot). |
-| `spec/scope_spec.lua`           | Filesystem read/write scope unit tests (`~/projects/**`).                                   |
+| `spec/scope_spec.lua`           | Root-parameterized scope unit tests (arbitrary roots; no hardcoded prefix).                 |
 | `spec/listing_spec.lua`         | Bounded file listing/filter/sort unit tests.                                                |
-| `spec/scene_spec.lua`           | Declarative scene composition unit tests.                                                   |
+| `spec/scene_spec.lua`           | Regression spec pinning the deferred panel placeholder.                                     |
 | `spec/init_spec.lua`            | Entry-point behavior against the mock host.                                                 |
 | `lua-defs/bitty.d.lua`          | Vendored LuaLS definitions from bitty-plugin-sdk (origin/main `a7fcd2b`).                   |
 | `lua-defs/negative-fixture.lua` | Excluded-surface fixture that LuaLS must reject.                                            |
@@ -55,8 +56,9 @@ just test-manifest
   `support/mock_host.lua` is this repository's bounded stand-in.
 - The `bitty` Lua bridge does not yet implement a host-mediated `bitty.fs`
   surface, so `init_spec.lua` exercises listing/preview/rename policy against
-  the local mock host only; in-host filesystem I/O stays behind the
-  `fs.read` / optional `fs.write` grants until that surface lands.
+  the local mock host only; no `fs.*` grant is requested (the manifest is
+  observation-only `terminal.semantic-read`), and in-host filesystem I/O stays
+  deferred until that surface lands and a reviewed task re-adds a grant.
 - CI installs `lua5.4` but not `lua-language-server` or `bitty-plugin-lint`,
   so those two wrappers report `skipped` (exit 0) in CI; install them locally,
   or pin them into the workflow later, for full conformance coverage.

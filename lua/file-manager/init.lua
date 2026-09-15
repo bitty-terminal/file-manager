@@ -5,25 +5,26 @@
 -- calls (`bitty.commands.register`, `bitty.events.subscribe`) are valid only
 -- while this file executes.
 --
--- Accepted surface: Plugin API v1 Lua Surface RFC (ADR 0009). Capabilities
--- requested in `bitty-plugin.toml` are `panel.provider` (tiled panel
--- factory), `panel.create` (panel instantiation),
--- `terminal.semantic-read` (read-only cwd/title observation), plus
--- `fs.read:~/projects/**` (directory listing/preview) and optional
--- `fs.write:~/projects/**` (user-confirmed rename/move/copy). The
--- identifiers are unchanged from the former bundled Rust realization
--- (`bitty` CTX-0399); the split changes no identity.
+-- Accepted surface: Plugin API v1 Lua Surface RFC (ADR 0009). The single
+-- capability requested in `bitty-plugin.toml` is `terminal.semantic-read`
+-- (read-only cwd/title observation). H-FM-02: the manifest no longer requests
+-- `panel.provider`, `panel.create`, or any `fs.read` / `fs.write` grant —
+-- no Lua here calls a panel API or `bitty.fs`, so those were phantom
+-- authority; least privilege wins.
 --
--- Fail-closed discipline: a denied `terminal.semantic-read` propagates
--- instead of serving empty data, out-of-scope paths are dropped, write
--- operations without the `fs.write` scope fail closed, and there is no
--- spawn surface in this plugin (`os.execute`, `io.popen`, and native
--- modules are denied by the Lua Runtime restricted library). Filesystem
--- access is host-mediated: this file validates and shapes bounded data rows
--- and declarative scenes for the host panel surface; the host performs the
--- real-path resolution and I/O. Observation event handlers refresh only the
--- cached snapshot-derived state and never touch the filesystem, keeping the
--- last-known-good value when the snapshot is unavailable.
+-- Fail-closed discipline: out-of-scope paths are dropped, operations that
+-- cannot resolve a scope root fail closed, and there is no spawn surface in
+-- this plugin (`os.execute`, `io.popen`, and native modules are denied by the
+-- Lua Runtime restricted library). Filesystem access is host-mediated: this
+-- file validates and shapes bounded data rows; the host performs the
+-- real-path resolution and I/O.
+--
+-- H-FM-01: the semantic snapshot is best-effort and only feeds the cached
+-- cwd/title. Commands `pcall` the refresh, so a missing focused terminal or a
+-- denied `terminal.semantic-read` no longer crashes operations that never use
+-- the snapshot; callers supply paths and a root, so every command works
+-- headless. The observation event handlers likewise keep the last-known-good
+-- value when the snapshot is unavailable.
 
 local scope = require("file-manager.scope")
 local listing = require("file-manager.listing")
@@ -55,9 +56,10 @@ local function snapshot()
   return value
 end
 
--- Refresh the cached snapshot-derived state. Called directly by commands
--- (a denied snapshot propagates fail-closed) and behind `pcall` by event
--- handlers (last-known-good survives a denied or slow snapshot).
+-- Refresh the cached snapshot-derived state. Called directly behind `pcall`
+-- by commands (H-FM-01: a denied or absent snapshot must not fail an
+-- operation that does not need it) and by event handlers (last-known-good
+-- survives a denied or slow snapshot).
 --
 -- The cwd comes from semantic-zone metadata newest-first (Plugin API v1
 -- Lua Surface RFC: the snapshot carries no top-level `cwd`; zones without
@@ -118,43 +120,93 @@ local function raw_paths(args)
   return {}
 end
 
-local function open_entries(args)
-  refresh_cache()
-  return listing.list_entries(raw_paths(args))
+-- M-FM-04: resolve the scope root for one command. Caller-supplied `root`
+-- wins, then the `root` setting, then the cached snapshot cwd. `nil` when
+-- none is available, which makes every consumer fail closed.
+local function resolved_root(args)
+  if type(args) == "table" and type(args.root) == "string" and args.root ~= "" then
+    return args.root
+  end
+  local configured = setting("root")
+  if type(configured) == "string" and configured ~= "" then
+    return configured
+  end
+  return cache.cwd
 end
 
+-- H-FM-01: never let a stale/denied snapshot abort the operation.
+local function refresh_cache_safely()
+  pcall(refresh_cache)
+end
+
+-- Open a bounded listing from explicit args or settings-provided candidates,
+-- resolved against the command root. Without any root there is no scope
+-- boundary, so the listing is empty rather than unvalidated.
+local function open_entries(args)
+  refresh_cache_safely()
+  local root = resolved_root(args)
+  if root == nil then
+    return {}
+  end
+  return listing.list_entries(raw_paths(args), { root = root })
+end
+
+-- Validate and shape one in-scope preview entry. Uses the original `path`
+-- for the directory marker so a relative `dir/` keeps its trailing slash.
 local function preview_entry(args)
-  refresh_cache()
+  refresh_cache_safely()
   local path = type(args) == "table" and args.path or nil
   if type(path) ~= "string" then
     fail("E_FS_DENIED", "preview requires a string path")
   end
-  if scope.validate_read(path) == nil then
-    fail("E_FS_DENIED", "preview path is outside the fs.read scope")
+  local root = resolved_root(args)
+  if root == nil then
+    fail("E_SCOPE_UNAVAILABLE", "preview requires a scope root")
   end
-  local entry = listing.entry_from_path(path, nil)
+  local candidate = scope.resolve(root, path)
+  if candidate == nil then
+    fail("E_FS_DENIED", "preview path is outside the scope root")
+  end
+  local entry = listing.entry_from_path(candidate, nil, { root = root })
   if entry == nil then
     fail("E_FS_DENIED", "preview path is not listable")
   end
-  entry.parent = scope.parent_dir(path)
-  entry.is_dir = scope.is_directory_path(path)
+  entry.parent = scope.parent_dir(root, candidate)
+  entry.is_dir = scope.is_directory_path(root, path)
   return entry
 end
 
+-- Validate one user-confirmed rename inside the scope root. L-FM-02: reject
+-- identical src/dst (raw or after resolution) and refuse to move the root.
 local function rename_pair(args)
-  refresh_cache()
+  refresh_cache_safely()
   local src = type(args) == "table" and args.src or nil
   local dst = type(args) == "table" and args.dst or nil
   if type(src) ~= "string" or type(dst) ~= "string" then
     fail("E_FS_DENIED", "rename requires string src and dst")
   end
-  if scope.validate_write(src) == nil then
-    fail("E_FS_DENIED", "rename src is outside the fs.write scope")
+  if src == dst then
+    fail("E_FS_DENIED", "rename requires distinct src and dst")
   end
-  if scope.validate_write(dst) == nil then
-    fail("E_FS_DENIED", "rename dst is outside the fs.write scope")
+  local root = resolved_root(args)
+  if root == nil then
+    fail("E_SCOPE_UNAVAILABLE", "rename requires a scope root")
   end
-  return { src = src, dst = dst, name = scope.file_name(dst) }
+  local src_candidate = scope.resolve(root, src)
+  local dst_candidate = scope.resolve(root, dst)
+  if src_candidate == nil or scope.validate_write(root, src_candidate) == nil then
+    fail("E_FS_DENIED", "rename src is outside the scope root")
+  end
+  if dst_candidate == nil or scope.validate_write(root, dst_candidate) == nil then
+    fail("E_FS_DENIED", "rename dst is outside the scope root")
+  end
+  if scope.is_root(root, src_candidate) then
+    fail("E_FS_DENIED", "rename cannot move the scope root")
+  end
+  if src_candidate == dst_candidate then
+    fail("E_FS_DENIED", "rename requires distinct src and dst")
+  end
+  return { src = src_candidate, dst = dst_candidate, name = scope.file_name(dst_candidate) }
 end
 
 bitty.commands.register({
@@ -178,7 +230,7 @@ bitty.commands.register({
 bitty.commands.register({
   id = "rename",
   title = "File Manager: rename",
-  description = "Validate one user-confirmed rename inside the fs.write scope.",
+  description = "Validate one user-confirmed rename inside the scope root.",
   run = function(args)
     return rename_pair(args or {})
   end,
