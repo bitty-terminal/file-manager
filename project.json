@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-09-15T09:29:34.739721913+00:00",
+  "git_common_dir": "***REDACTED-PATH***",
+  "id": "01M2J6CYRKRY90VBNKY2PRBXGK",
+  "main_branch": "main",
+  "name": "file-manager",
+  "repository_root": "***REDACTED-PATH***",
+  "schema_version": 4,
+  "task_prefix": "CTX",
+  "updated_at": "2026-09-15T09:29:34.739721913+00:00"
+}
