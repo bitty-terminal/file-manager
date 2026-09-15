@@ -1,0 +1,12 @@
+# file-manager: workspace identity descriptor (kind/lang/role mirror workspace.toml).
+[repo]
+name = "file-manager"
+kind = "plugin"
+lang = "lua/ts"
+role = "independent plugin: file manager panel"
+owner = "TBD"
+docs = "bitty-plugins-docs"
+
+[contracts.consumes]
+manifest-v1 = "OQ-012 plugin-platform-rfc" # bitty-plugin.toml header
+plugin-api-v1 = "ADR-0009 Lua Surface" # lua/file-manager/init.lua cites Plugin API v1
