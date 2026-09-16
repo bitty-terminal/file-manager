@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   normalization is centralized in `scope.trim_trailing_slash`.
 - **Docs:** README now describes the observation-only capability set, the
   root-parameterized scope, the headless behavior, and the payload bound.
+- **Manifest gate (R-SDK-2):** `just manifest` now runs the authoritative SDK
+  linter `bitty-plugin-lint` (commit-pinned in `package.json` and `bun.lock`)
+  and fails closed when the pinned dependency is missing. The transitional
+  `scripts/validate-manifest.mjs` and the optional `tests/check-manifest-lint.mjs`
+  wrapper are removed, so the SDK lint is the single source of truth, and every
+  gate runs offline after one `just install` (`CTX-0004`).
 
 ### Removed
 
@@ -62,13 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.editorconfig`. The repository-metadata baseline guide and ADR 0011 are
   **Proposed**; adoption is per repository under this scoped task, not a claim
   that the baseline is accepted.
+- **Pinned SDK lint with offline gates:** `bitty-plugin-sdk`
+  (`bitty-plugin-lint`, R-SDK-2) and `luaparse` are commit-locked
+  devDependencies; `just install` (`bun install --frozen-lockfile`) is the only
+  networked gate step and `just deps` fails closed when the dependencies are
+  not materialized (`CTX-0004`).
 - **Negative-fixture automation (R24):** `just test-negative`
   (`tests/check-manifest-negative.mjs`, wired into `just test`/`just check`)
-  rejects every `validator-negative/*.toml` fixture through
-  `scripts/validate-manifest.mjs` and accepts the `base.toml` positive control,
-  so the validator cannot silently stop rejecting denied manifests. The check
-  fails when the fixture directory, the control, or a required negative fixture
-  is missing instead of passing vacuously.
+  rejects every `validator-negative/*.toml` fixture through the authoritative
+  `bitty-plugin-lint` (bitty-plugin-sdk, R-SDK-2) and accepts the `base.toml`
+  positive control, so the validator cannot silently stop rejecting denied
+  manifests. Each required fixture must emit its expected SDK diagnostic code
+  and the control must be byte-identical to `bitty-plugin.toml`, so a fixture
+  cannot pass by being rejected for the wrong reason or by drifting from the
+  shipped manifest shape. The check fails when the fixture directory, the
+  control, a required negative fixture, or the pinned linter is missing instead
+  of passing vacuously.
 - **Initial independent package (OQ-053, `bitty` CTX-0399):**
   `bitty-terminal.file-manager` extracted from the `bitty` bundled-disabled
   catalog into this repository with no identity change (id, commands, events).

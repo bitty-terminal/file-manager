@@ -12,7 +12,7 @@
 id = "bitty-terminal.file-manager"
 name = "File Manager"
 version = "0.1.0"
-description = "Tiled Panel file manager with fs.read + optional fs.write, bounded 8KiB/32/64 PR-1..12"
+description = "File manager listing, navigation, and preview with terminal observation only, bounded 8KiB payload"
 license = "MIT"
 
 [compat]
@@ -24,30 +24,16 @@ plugin-api = "^1.0"
 # Deny by default: omit this table entirely when the plugin needs no authority.
 # Unknown identifiers fail validation and there is no allow-all identifier.
 #
-# `panel.provider` + `panel.create` back the tiled Panel Runtime registration.
-# `terminal.semantic-read` gates `bitty.terminal.snapshot`, the read-only
-# cwd/title observation the panel refreshes from. Filesystem access is
-# declared via `[[capabilities.filesystem]]` below, never via a boolean key:
-# `read` backs directory listing/preview, `write` is optional and gates only
-# user-confirmed rename/move/copy. All identifiers are unchanged from the
-# former bundled manifest; the split changes no identity.
-panel.provider = true
-fs.read = true
-panel.create = true
+# H-FM-02 (least privilege): `terminal.semantic-read` gates
+# `bitty.terminal.snapshot`, the read-only cwd/title observation the cache
+# refreshes from. The `panel.provider`/`panel.create` and
+# `[[capabilities.filesystem]]` read/write grants the bundled manifest carried
+# are removed: no Lua here calls a panel API, and there is no `bitty.fs`
+# surface in Plugin API v1 (`surface/bitty-plugin-api-v1.json` excludes both;
+# `bitty.ui.register_panel` is post-v1.0), so those requests were phantom
+# authority. A grant is re-added only when code actually exercises it.
 terminal.semantic-read = true
-
-# Directory listing/preview read scope. Patterns resolve against real paths;
-# symlinks and devices are rejected per host policy. Unchanged from the
-# bundled manifest.
-[[capabilities.filesystem]]
-access = "read"
-paths = ["~/projects/**"]
-
-# Optional mutation scope for user-confirmed rename/move/copy. When this grant
-# is absent, mutations fail closed. Unchanged from the bundled manifest.
-[[capabilities.filesystem]]
-access = "write"
-paths = ["~/projects/**"]
+fs.read = true
 
 [lazy]
 # Static triggers let the host register the plugin without creating a VM.

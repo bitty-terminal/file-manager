@@ -8,16 +8,15 @@ CI; the individual suites are also available directly.
 
 - `lua5.4` (plugin VM baseline per ADR 0005) — required for behavior tests;
   CI installs it from the Ubuntu archive before `just check`.
-- `bun` — the manifest validator and the LuaLS/SDK-linter wrapper scripts.
+- `bun` — runs the wrapper scripts and `just install`, which materializes the
+  pinned devDependencies (including the SDK linter used by `just manifest`).
 - `lua-language-server` (optional) — LuaLS conformance; the check skips with
   exit 0 when it is unavailable (CI does not install it).
-- `bitty-plugin-lint` from `bitty-plugin-sdk` (optional) — authoritative
-  manifest check; skipped unless discoverable (CI does not install it).
 
 ## Commands
 
 ```sh
-just test            # lua5.4 runner + LuaLS check + SDK/manifest fixture checks
+just test            # lua5.4 runner + LuaLS check + negative-fixture check
 
 # Behavior tests: scope, listings, deferred panel placeholder, lifecycle,
 # capabilities.
@@ -27,31 +26,28 @@ just test-lua
 # (LUA_LANGUAGE_SERVER=/path/to/server overrides discovery).
 just test-luals
 
-# Authoritative manifest check (SDK R-SDK-2);
-# BITTY_PLUGIN_LINT=/path/to/bitty-plugin-sdk/src/cli.ts forces the SDK CLI.
-just test-manifest
-
 # Negative manifest fixtures (R24): every `validator-negative/*.toml` must be
-# rejected; `base.toml` is the accepted positive control.
+# rejected by the pinned SDK linter with its expected diagnostic code;
+# `base.toml` must be byte-identical to `bitty-plugin.toml`. Fails closed when
+# the fixture set, control, or linter is missing.
 just test-negative
 ```
 
 ## Layout
 
-| Path                            | Purpose                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `run.lua`                       | Plain-Lua runner; exits non-zero on assertion failure.                                      |
-| `support/tap.lua`               | Assertion helper (no external test framework).                                              |
-| `support/mock_host.lua`         | Fail-closed in-process `bitty` stub modeling the used surface (commands, events, snapshot). |
-| `spec/scope_spec.lua`           | Root-parameterized scope unit tests (arbitrary roots; no hardcoded prefix).                 |
-| `spec/listing_spec.lua`         | Bounded file listing/filter/sort unit tests.                                                |
-| `spec/scene_spec.lua`           | Regression spec pinning the deferred panel placeholder.                                     |
-| `spec/init_spec.lua`            | Entry-point behavior against the mock host.                                                 |
-| `lua-defs/bitty.d.lua`          | Vendored LuaLS definitions from bitty-plugin-sdk (origin/main `a7fcd2b`).                   |
-| `lua-defs/negative-fixture.lua` | Excluded-surface fixture that LuaLS must reject.                                            |
-| `check-lua-luals.mjs`           | Positive/negative LuaLS workspace check.                                                    |
-| `check-manifest-lint.mjs`       | Runs `bitty-plugin-lint` when discoverable.                                                 |
-| `check-manifest-negative.mjs`   | Rejects every `validator-negative/*.toml` fixture; accepts the `base.toml` control.         |
+| Path                            | Purpose                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.lua`                       | Plain-Lua runner; exits non-zero on assertion failure.                                                                                |
+| `support/tap.lua`               | Assertion helper (no external test framework).                                                                                        |
+| `support/mock_host.lua`         | Fail-closed in-process `bitty` stub modeling the used surface (commands, events, snapshot).                                           |
+| `spec/scope_spec.lua`           | Root-parameterized scope unit tests (arbitrary roots; no hardcoded prefix).                                                           |
+| `spec/listing_spec.lua`         | Bounded file listing/filter/sort unit tests.                                                                                          |
+| `spec/scene_spec.lua`           | Regression spec pinning the deferred panel placeholder.                                                                               |
+| `spec/init_spec.lua`            | Entry-point behavior against the mock host.                                                                                           |
+| `lua-defs/bitty.d.lua`          | Vendored LuaLS definitions from bitty-plugin-sdk (origin/main `a7fcd2b`).                                                             |
+| `lua-defs/negative-fixture.lua` | Excluded-surface fixture that LuaLS must reject.                                                                                      |
+| `check-lua-luals.mjs`           | Positive/negative LuaLS workspace check.                                                                                              |
+| `check-manifest-negative.mjs`   | Rejects each `validator-negative/*.toml` fixture with its expected `bitty-plugin-lint` diagnostic; asserts `base.toml` byte-identity. |
 
 ## Known gaps
 
@@ -64,6 +60,8 @@ just test-negative
   the local mock host only; no `fs.*` grant is requested (the manifest is
   observation-only `terminal.semantic-read`), and in-host filesystem I/O stays
   deferred until that surface lands and a reviewed task re-adds a grant.
-- CI installs `lua5.4` but not `lua-language-server` or `bitty-plugin-lint`,
-  so those two wrappers report `skipped` (exit 0) in CI; install them locally,
-  or pin them into the workflow later, for full conformance coverage.
+- CI installs `lua5.4` but not `lua-language-server`, so the LuaLS wrapper
+  reports `skipped` (exit 0) in CI; install it locally, or pin it into the
+  workflow later, for full conformance coverage. The manifest linter is a
+  commit-pinned devDependency (`just install`), so `just manifest` and
+  `just test-negative` run it everywhere.
