@@ -52,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub metadata baseline (CI, CodeQL, Dependabot, editorconfig):** added
+  `.github/workflows/ci.yml` (job `Quality gates`: SHA-pinned checkout, `just`,
+  Bun 1.4.0, Lua 5.4, `just check`; plus a `Lint GitHub Actions workflows`
+  actionlint job), `.github/workflows/codeql.yml` (`actions` and
+  `javascript-typescript`), `.github/workflows/snapshot-source.yml` (verifies
+  the in-repo `refs/heads/carryctx-snapshots` publication against `main`),
+  `.github/dependabot.yml`, `.github/codeql/codeql-config.yml`, and a root
+  `.editorconfig`. The repository-metadata baseline guide and ADR 0011 are
+  **Proposed**; adoption is per repository under this scoped task, not a claim
+  that the baseline is accepted.
 - **Negative-fixture automation (R24):** `just test-negative`
   (`tests/check-manifest-negative.mjs`, wired into `just test`/`just check`)
   rejects every `validator-negative/*.toml` fixture through
