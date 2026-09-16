@@ -26,17 +26,21 @@ beyond the manifest `[compat]` ranges.
 
 ## Layout
 
-| Path                            | Purpose                                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `bitty-plugin.toml`             | Static manifest: identity, compatibility, capability requests, and lazy triggers.                |
-| `lua/file-manager/init.lua`     | Entry point evaluated once per activation; registers the three file commands and event handlers. |
-| `lua/file-manager/scope.lua`    | Host-free root-parameterized scope checks (arbitrary roots; no hardcoded prefix).                |
-| `lua/file-manager/listing.lua`  | Host-free bounded file listings, filters, and sorting.                                           |
-| `lua/file-manager/scene.lua`    | Intentional placeholder for deferred panel presentation (see the M-FM-05 note below).            |
-| `tests/`                        | Lua 5.4 behavior suite, LuaLS conformance, SDK manifest-lint, and negative-fixture checks.       |
-| `validator-negative/`           | Manifest fixtures the validator must reject; `base.toml` is the accepted positive control (R24). |
-| `scripts/validate-manifest.mjs` | Transitional manifest check; `bitty-plugin-lint` (R-SDK-2) is authoritative.                     |
-| `justfile`                      | Quality gates with pinned tool versions.                                                         |
+| Path                                    | Purpose                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `bitty-plugin.toml`                     | Static manifest: identity, compatibility, capability requests, and lazy triggers.                |
+| `lua/file-manager/init.lua`             | Entry point evaluated once per activation; registers the three file commands and event handlers. |
+| `lua/file-manager/scope.lua`            | Host-free root-parameterized scope checks (arbitrary roots; no hardcoded prefix).                |
+| `lua/file-manager/listing.lua`          | Host-free bounded file listings, filters, and sorting.                                           |
+| `lua/file-manager/scene.lua`            | Intentional placeholder for deferred panel presentation (see the M-FM-05 note below).            |
+| `tests/`                                | Lua 5.4 behavior suite, LuaLS conformance, SDK manifest-lint, and negative-fixture checks.       |
+| `validator-negative/`                   | Manifest fixtures the validator must reject; `base.toml` is the accepted positive control (R24). |
+| `scripts/validate-manifest.mjs`         | Transitional manifest check; `bitty-plugin-lint` (R-SDK-2) is authoritative.                     |
+| `justfile`                              | Quality gates with pinned tool versions.                                                         |
+| `.github/workflows/ci.yml`              | CI quality gate with a read-only token and SHA-pinned actions.                                   |
+| `.github/workflows/codeql.yml`          | CodeQL analysis (`actions`, `javascript-typescript`).                                            |
+| `.github/workflows/snapshot-source.yml` | CarryCtx snapshot staleness gate (push to `main`/`carryctx-snapshots`).                          |
+| `.github/dependabot.yml`                | Weekly grouped updates for pinned GitHub Actions and npm dev dependencies.                       |
 
 ## Behavior
 
@@ -102,6 +106,11 @@ wiring.
   `bitty`.
 
 ## Development
+
+Prerequisites: `just`, `bun`, and `lua5.4` for the behavior suite. CI
+(`.github/workflows/ci.yml`, job `Quality gates`) pins Bun 1.4.0, installs Lua
+5.4, and runs `just check`; a separate `Lint GitHub Actions workflows` job runs
+actionlint, and CodeQL analyzes `actions` and `javascript-typescript`.
 
 Run the same gate CI runs:
 
