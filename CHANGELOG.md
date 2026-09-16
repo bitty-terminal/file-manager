@@ -58,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Contributor and security docs:** new `CONTRIBUTING.md` (ground rules,
+  prerequisites, development setup, delivery lifecycle, contributor branches,
+  capabilities and privacy, workflow snapshots, reporting) and `SECURITY.md`
+  aligned with the canonical `bitty-docs` security corpus, including the
+  private advisory channel and a supported-versions table (`CTX-0005`).
+- **Repository metadata baseline:** a tracked `.gitattributes` normalizing
+  text files to LF and marking binary assets, and a `packageManager` bun pin
+  in `package.json` with the lockfile revalidated (`CTX-0005`).
 - **GitHub metadata baseline (CI, CodeQL, Dependabot, editorconfig):** added
   `.github/workflows/ci.yml` (job `Quality gates`: SHA-pinned checkout, `just`,
   Bun 1.4.0, Lua 5.4, `just check`; plus a `Lint GitHub Actions workflows`

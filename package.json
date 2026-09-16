@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.2",
   "description": "Observation-only file manager plugin for the Bitty terminal.",
   "license": "MIT",
   "devDependencies": {
