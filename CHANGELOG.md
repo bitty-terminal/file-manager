@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Preview directory metadata (PLUG-APP-010, #14):** derive `kind` and
+  `is_dir` together from the original validated input and omit trailing
+  slashes from preview result paths. Equivalent relative and absolute
+  directory inputs now return consistent six-field presentation metadata,
+  without filesystem I/O or changes to shared path resolution or listing.
+
 ### Changed
 
 - **Root-parameterized scope (M-FM-04, M-FM-03):** removed the hardcoded

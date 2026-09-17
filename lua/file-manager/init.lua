@@ -167,12 +167,14 @@ local function preview_entry(args)
   if candidate == nil then
     fail("E_FS_DENIED", "preview path is outside the scope root")
   end
-  local entry = listing.entry_from_path(candidate, nil, { root = root })
+  local is_dir = scope.is_directory_path(root, path)
+  local entry = listing.entry_from_path(candidate, is_dir and "dir" or "file", { root = root })
   if entry == nil then
     fail("E_FS_DENIED", "preview path is not listable")
   end
+  entry.path = scope.trim_trailing_slash(candidate)
   entry.parent = scope.parent_dir(root, candidate)
-  entry.is_dir = scope.is_directory_path(root, path)
+  entry.is_dir = is_dir
   return entry
 end
 

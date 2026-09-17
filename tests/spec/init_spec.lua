@@ -175,8 +175,46 @@ local function run(context)
     tap.equal(entry.name, "foo.txt", "preview names the file")
     tap.equal(entry.parent, ROOT .. "/sub", "preview resolves the parent")
     tap.equal(entry.is_dir, false, "plain file is not a directory")
-    local dir_entry = host:run("preview", { root = ROOT, path = "docs/" })
-    tap.equal(dir_entry.is_dir, true, "trailing slash preview is a directory")
+    local listing = require("file-manager.listing")
+    local fields = { "name", "path", "kind", "truncated", "parent", "is_dir" }
+    local long_name = string.rep("é", listing.MAX_NAME_CHARS + 1)
+    local cases = {
+      { path = "docs/", name = "docs", parent = ROOT, is_dir = true },
+      { path = "sub/docs///", name = "docs", parent = ROOT .. "/sub", is_dir = true },
+      { path = "sub/foo.txt", name = "foo.txt", parent = ROOT .. "/sub", is_dir = false },
+      { path = "docs", name = "docs", parent = ROOT, is_dir = false },
+      {
+        path = long_name .. "/",
+        name = string.rep("é", listing.MAX_NAME_CHARS),
+        parent = ROOT,
+        is_dir = true,
+        truncated = true,
+      },
+    }
+    for _, case in ipairs(cases) do
+      local relative = host:run("preview", { root = ROOT, path = case.path })
+      local absolute = host:run("preview", { root = ROOT, path = ROOT .. "/" .. case.path })
+      local expected = {
+        name = case.name,
+        path = ROOT .. "/" .. string.gsub(case.path, "/+$", ""),
+        kind = case.is_dir and "dir" or "file",
+        truncated = case.truncated or false,
+        parent = case.parent,
+        is_dir = case.is_dir,
+      }
+      for _, field in ipairs(fields) do
+        tap.equal(relative[field], expected[field], "relative preview " .. case.path .. " " .. field)
+        tap.equal(absolute[field], expected[field], "absolute preview " .. case.path .. " " .. field)
+        tap.equal(relative[field], absolute[field], "equivalent preview " .. case.path .. " " .. field)
+      end
+    end
+    for _, path in ipairs({ ROOT, ROOT .. "/", ".", "./", "../docs/", ROOT .. "/../docs/" }) do
+      local ok, err = pcall(function()
+        return host:run("preview", { root = ROOT, path = path })
+      end)
+      tap.ok(not ok, "preview rejects root or traversal " .. path)
+      tap.equal(type(err) == "table" and err.code or nil, "E_FS_DENIED", "preview rejection code")
+    end
   end
 
   -- Preview outside the root fails closed.
