@@ -78,6 +78,12 @@ CTX-0399; the bundled `file_manager_manifest` plus
 - `open` lists bounded entries from explicit args or settings-provided
   candidates, `preview` resolves one in-scope path, and `rename` validates one
   in-scope pair (the host mediates the actual mutation);
+- `preview` derives `kind` and `is_dir` from the original validated input's
+  trailing slash, not filesystem metadata. Equivalent relative and absolute
+  directory inputs return matching `name`, `path`, `kind`, `truncated`,
+  `parent`, and `is_dir` fields; preview result paths omit trailing slashes.
+  Scope-root exclusion, path denial, and name bounds still apply. Shared
+  resolution and listing behavior are unchanged;
 - observation event handlers refresh only the cached snapshot-derived state
   and never touch the filesystem.
 
