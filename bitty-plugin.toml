@@ -17,7 +17,7 @@ license = "MIT"
 
 [compat]
 # Unchanged from the former bundled `bitty-terminal.file-manager` realization.
-bitty = ">=0.1,<1.0"
+bitty = ">=0.0.24,<0.1"
 plugin-api = "^1.0"
 
 [capabilities]
