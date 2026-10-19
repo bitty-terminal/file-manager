@@ -67,6 +67,7 @@ lua: deps
     bun run luaparse --quiet --file lua/file-manager/init.lua
     bun run luaparse --quiet --file lua/file-manager/scope.lua
     bun run luaparse --quiet --file lua/file-manager/listing.lua
+    bun run luaparse --quiet --file lua/file-manager/directory.lua
     bun run luaparse --quiet --file lua/file-manager/scene.lua
 
 # Run the Lua 5.4 behavior suite (scope, listings, scenes,

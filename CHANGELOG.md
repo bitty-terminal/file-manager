@@ -33,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantic snapshot behind `pcall` and proceed with caller-supplied or
   settings-derived paths and root, so a missing focused terminal or a denied
   `terminal.semantic-read` no longer crashes operations that do not use the
-  snapshot. Without any root, `open` is empty and `preview`/`rename` fail
-  closed with `E_SCOPE_UNAVAILABLE`.
+  snapshot. Without any root, `open` mounts a typed scope error and
+  `preview`/`rename` fail closed with `E_SCOPE_UNAVAILABLE`.
 - **Payload byte bound (R16):** `list_entries` now enforces `PAYLOAD_MAX_BYTES`
   (`8192`) as accumulated `path` + `name` bytes instead of only capping the
   entry count.
@@ -44,8 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical src/dst (raw or resolved) and refuses to move the root; entry
   construction no longer has the dead scope-root branch, and trailing-slash
   normalization is centralized in `scope.trim_trailing_slash`.
-- **Docs:** README now describes the observation-only capability set, the
-  root-parameterized scope, the headless behavior, and the payload bound.
+- **Docs:** README now describes the read-only capability set, the
+  root-parameterized scope, the headless behavior, the mounted listing
+  surface, and the payload bound.
 - **Manifest gate (R-SDK-2):** `just manifest` now runs the authoritative SDK
   linter `bitty-plugin-lint` (commit-pinned in `package.json` and `bun.lock`)
   and fails closed when the pinned dependency is missing. The transitional
@@ -55,17 +56,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **Phantom capabilities (H-FM-02):** `panel.provider`, `panel.create`, and the
-  `[[capabilities.filesystem]]` `read` / `write` requests. No Lua in this
-  package exercised a panel API and there is no `bitty.fs` surface in Plugin
-  API v1, so the manifest now requests only `terminal.semantic-read`.
-- **Dead scene builders (M-FM-05):** the `lua/file-manager/scene.lua`
-  declarative builders were never imported and no accepted v1 surface mounts a
-  scene from a command result; they were removed, leaving an intentional empty
-  placeholder with a future-intent pointer.
+- **Phantom panel capabilities (H-FM-02):** `panel.provider` and
+  `panel.create`; no Lua in this package calls a panel-provider API, and
+  `bitty.ui.mount` is the accepted declarative surface. The former
+  `fs.write` request is also gone: the listing is read-only and the host
+  mediates mutations.
+- **Empty scene placeholder (M-FM-05):** `scene.lua` no longer returns `{}`;
+  it now carries the real declarative builders wired to `bitty.ui.mount`
+  through `init.lua`.
 
 ### Added
 
+- **Listing surface (#29):** `open` now mounts a bounded declarative
+  `Text`/`Row`/`Column`/`List` block on the accepted `bottom` band through
+  `bitty.ui.mount` and reuses it through `bitty.ui.update`. Directory rows
+  navigate with the existing `open` command; file rows select/preview with
+  the existing `preview` command. Empty directories and typed host denials
+  mount explanatory blocks instead of crashing.
+- **Host-mediated directory reads:** `directory.lua` calls `bitty.fs.list`
+  under one read-only `[[capabilities.filesystem]]` grant, normalizes and
+  bounds host entries, sorts directories first, and converts every denial
+  into a typed error value. The manifest also declares `ui.rich` for the
+  block.
+- **Declared settings:** `[settings]` declares `root` (string), `entries`
+  (string array), and `width` (int) so every `bitty.settings.get` read is
+  allowed by the CTX-1195 allowlist. The test mock now fails undeclared reads
+  closed.
+- **SDK pin:** bumped `bitty-plugin-sdk` to `3ea8e58` for the accepted
+  `[settings]` manifest schema, and regenerated the vendored LuaLS
+  definitions.
 - **Contributor and security docs:** new `CONTRIBUTING.md` (ground rules,
   prerequisites, development setup, delivery lifecycle, contributor branches,
   capabilities and privacy, workflow snapshots, reporting) and `SECURITY.md`

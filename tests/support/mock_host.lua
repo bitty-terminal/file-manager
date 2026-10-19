@@ -2,16 +2,16 @@
 --
 -- This is a test double, not a host implementation: it models only the
 -- accepted surface the file-manager uses — Plugin API v1 commands/events/
--- settings/terminal-snapshot — with fail-closed capability gates and
--- manifest-declared command/event validation. It performs no I/O, spawns
--- nothing, and never touches the network or the filesystem.
+-- settings/terminal-snapshot/ui-mount plus the RFC-0005 `bitty.fs.list`
+-- bridge — with fail-closed capability gates and manifest-declared command/
+-- event/settings validation. It performs no I/O, spawns nothing, and never
+-- touches the network or the filesystem.
 --
--- Observation-only (H-FM-02): the plugin requests just
--- `terminal.semantic-read`, so `terminal.snapshot` is the only gated surface.
--- Filesystem access is not wired — there is no `bitty.fs` surface in Plugin
--- API v1 and no `fs.*` grant — so the stub models no filesystem calls; the
--- plugin's root-parameterized scope checks (arbitrary roots, no hardcoded
--- prefix) are the fail-closed boundary under test.
+-- Directory data is staged explicitly (`options.fs_entries[prefix]` or an
+-- `options.fs_entries(prefix, max_entries)` function); a missing backend
+-- fails with the host's typed `E_NOT_IMPLEMENTED`, and `options.fs_error`
+-- stages a typed denial. Mounted blocks are recorded (`mounts`, `updates`,
+-- `ui_blocks`) so specs can assert the host-API call shape.
 
 local MockHost = {}
 MockHost.__index = MockHost
@@ -19,6 +19,8 @@ MockHost.__index = MockHost
 local function fail(class, code, message)
   error({ class = class, code = code, message = message }, 0)
 end
+
+local DEFAULT_DECLARED_SETTINGS = { root = true, entries = true, width = true }
 
 function MockHost.new(options)
   options = options or {}
@@ -36,10 +38,20 @@ function MockHost.new(options)
   for _, name in ipairs(options.events or {}) do
     self.declared_events[name] = true
   end
+  self.declared_settings = {}
+  for key in pairs(options.settings_declared or DEFAULT_DECLARED_SETTINGS) do
+    self.declared_settings[key] = true
+  end
   self.settings = options.settings or {}
   self.snapshot_value = options.snapshot
+  self.fs_entries = options.fs_entries
+  self.fs_error = options.fs_error
+  self.fs_calls = {}
   self.commands = {}
   self.subscriptions = {}
+  self.mounts = {}
+  self.updates = {}
+  self.ui_blocks = {}
   self.handle_counter = 0
   self.sequence = 1
   self.bitty = self:build_bitty()
@@ -101,6 +113,9 @@ function MockHost:build_bitty()
         if type(key) ~= "string" then
           fail("validation", "E_SETTINGS_KEY_INVALID", "settings key must be a string")
         end
+        if not self.declared_settings[key] then
+          fail("validation", "E_SETTINGS_UNDECLARED", "settings key is not declared: " .. key)
+        end
         return self.settings[key]
       end,
     },
@@ -111,6 +126,54 @@ function MockHost:build_bitty()
           fail("runtime", "E_SNAPSHOT_UNAVAILABLE", "no semantic snapshot staged")
         end
         return self.snapshot_value
+      end,
+    },
+    ui = {
+      mount = function(slot, component)
+        self:assert_capability("bitty.ui.mount", "ui.rich")
+        if type(slot) ~= "string" or type(component) ~= "table" or type(component.kind) ~= "string" then
+          fail("validation", "E_UI_COMPONENT_INVALID", "component is not a declarative node")
+        end
+        local handle = self:next_handle()
+        self.mounts[#self.mounts + 1] = {
+          slot = slot,
+          component = component,
+          handle = handle,
+        }
+        self.ui_blocks[handle] = component
+        return handle
+      end,
+      update = function(handle, component)
+        self:assert_capability("bitty.ui.update", "ui.rich")
+        if type(handle) ~= "number" or type(component) ~= "table" or type(component.kind) ~= "string" then
+          fail("validation", "E_UI_COMPONENT_INVALID", "component is not a declarative node")
+        end
+        if self.ui_blocks[handle] == nil then
+          return false
+        end
+        self.ui_blocks[handle] = component
+        self.updates[#self.updates + 1] = { handle = handle, component = component }
+        return true
+      end,
+    },
+    fs = {
+      list = function(prefix, max_entries)
+        self:assert_capability("bitty.fs.list", "fs.read:**")
+        self.fs_calls[#self.fs_calls + 1] = { prefix = prefix, max_entries = max_entries }
+        if type(self.fs_error) == "table" then
+          fail(
+            self.fs_error.class or "runtime",
+            self.fs_error.code or "E_FS_SCOPE_MISMATCH",
+            self.fs_error.message or "fs denied"
+          )
+        end
+        if self.fs_entries == nil then
+          fail("runtime", "E_NOT_IMPLEMENTED", "bitty.fs.list")
+        end
+        if type(self.fs_entries) == "function" then
+          return self.fs_entries(prefix, max_entries)
+        end
+        return self.fs_entries[prefix] or {}
       end,
     },
   }

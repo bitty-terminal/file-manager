@@ -6,10 +6,13 @@ observed terminal working directory with host-mediated filesystem access.
 
 - Plugin id: `bitty-terminal.file-manager`
 - Lua module: `lua/file-manager/`
-- Capabilities: `terminal.semantic-read` (read-only cwd/title observation)
+- Capabilities: `terminal.semantic-read` (read-only cwd/title observation),
+  `ui.rich` (declarative listing block), and read-only `fs.read:**`
+  (`bitty.fs.list` directory enumeration)
 - Lazy commands: `bitty-terminal.file-manager:open`, `:preview`, `:rename`
 - Lazy events: `terminal.cwd-changed`, `terminal.title-changed`,
   `focus.changed`
+- Settings: `root`, `entries`, `width` (declared in `[settings]`)
 
 This repository is the independent first-party package created by the bundled
 plugin split decision (OQ-053, `bitty-plugins-docs`
@@ -19,20 +22,23 @@ was scaffolded from
 
 ## Status
 
-Pre-implementation ecosystem: the plugin package, manifest, and policy are
-implemented and tested headlessly; the Bitty host is still landing the
-host-mediated filesystem bridge. Nothing here is a compatibility promise
-beyond the manifest `[compat]` ranges.
+The plugin package, manifest, listing surface, and policy are implemented and
+tested headlessly. The Bitty host is still landing the backend for the
+host-mediated `bitty.fs.list` bridge, so a live host may mount a typed
+`E_NOT_IMPLEMENTED` block until that lands; explicit args/settings entries
+still render. Nothing here is a compatibility promise beyond the manifest
+`[compat]` ranges.
 
 ## Layout
 
 | Path                                    | Purpose                                                                                                                           |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `bitty-plugin.toml`                     | Static manifest: identity, compatibility, capability requests, and lazy triggers.                                                 |
-| `lua/file-manager/init.lua`             | Entry point evaluated once per activation; registers the three file commands and event handlers.                                  |
+| `bitty-plugin.toml`                     | Static manifest: identity, compatibility, capability requests, declared settings, and lazy triggers.                              |
+| `lua/file-manager/init.lua`             | Entry point evaluated once per activation; registers the three file commands, mounts/updates the listing block, and wires events. |
 | `lua/file-manager/scope.lua`            | Host-free root-parameterized scope checks (arbitrary roots; no hardcoded prefix).                                                 |
 | `lua/file-manager/listing.lua`          | Host-free bounded file listings, filters, and sorting.                                                                            |
-| `lua/file-manager/scene.lua`            | Intentional placeholder for deferred panel presentation (see the M-FM-05 note below).                                             |
+| `lua/file-manager/directory.lua`        | Host-mediated `bitty.fs.list` reads: normalize, bound, sort, and turn denials into typed errors.                                  |
+| `lua/file-manager/scene.lua`            | Pure declarative `Text`/`Row`/`Column`/`List` builders for the listing, empty state, typed error state, and preview.              |
 | `tests/`                                | Lua 5.4 behavior suite, LuaLS conformance, and the SDK-lint negative-fixture check.                                               |
 | `validator-negative/`                   | Manifest fixtures the SDK linter must reject with expected diagnostics; `base.toml` is the byte-identical accepted control (R24). |
 | `justfile`                              | Quality gates; `just install` materializes the pinned dev dependencies.                                                           |
@@ -50,65 +56,73 @@ CTX-0399; the bundled `file_manager_manifest` plus
 - pure Lua policy, no spawn: there is no `process.spawn` surface in this
   plugin and no `os.execute`, `io.popen`, or native module (denied by the
   Lua Runtime restricted library); filesystem access is host-mediated;
-- least privilege (H-FM-02): the manifest requests only
-  `terminal.semantic-read`. The former `panel.provider`, `panel.create`, and
-  `fs.read` / `fs.write` requests were phantom authority — no Lua in this
-  package calls a panel API or a filesystem entry point — and are removed;
+- least privilege (H-FM-02): the manifest requests three read-only
+  authorities, each exercised by code: `terminal.semantic-read` for the
+  cwd/title observation, `ui.rich` for the declarative listing block, and the
+  `[[capabilities.filesystem]]` read grant for `bitty.fs.list`. There is no
+  `fs.write`, process, network, clipboard, or terminal-input request. `list`
+  is read-class in the RFC-0005 bridge, so the listing cannot mutate the
+  filesystem;
 - scope is root-parameterized (M-FM-04): every candidate resolves against a
   caller-supplied `root` (`args.root`, then the `root` setting, then the
-  cached terminal cwd) and is admitted only when it equals or nests under that
-  root, so arbitrary roots work and any path fails closed when no root is
-  available. Validation is segment-wise: only a whole `/`-segment equal to
-  `..` is denied, so `a..b` and `backup..tar.gz` are admitted while `x/../y`
-  is rejected. A bare `/` root is path-less and names no boundary, so it is
-  treated as unavailable: containment admits nothing (not even the root) and
-  joins fail closed, keeping the edge canonical (no non-canonical `//foo`);
-- path validation additionally fails closed on: empty paths, paths over
-  `4096` bytes, and null/control characters;
-- listings truncate deterministically after sorting and deduplication: `128`
-  entries per directory, `64` selected items; names at `128` chars, paths at
-  `4096` bytes; the accumulated listing payload is bounded to `8192` bytes of
-  `path` + `name` bytes (R16);
+  mounted listing root, then the cached terminal cwd) and is admitted only
+  when it equals or nests under that root, so arbitrary roots work and any
+  path fails closed when no root is available. Validation is segment-wise:
+  only a whole `/`-segment equal to `..` is denied, so `a..b` and
+  `backup..tar.gz` are admitted while `x/../y` is rejected. A bare `/` root is
+  path-less and names no boundary, so it is treated as unavailable;
+- path validation additionally fails closed on empty paths, paths over `4096`
+  bytes, and null/control characters; listings truncate deterministically
+  after sorting and deduplication at `128` entries, `128`-char names,
+  `4096`-byte paths, and `8192` accumulated `path` + `name` bytes (R16);
 - headless operation (H-FM-01): the semantic snapshot only feeds the cached
-  cwd/title and is refreshed behind `pcall`, so a missing focused terminal or
-  a denied `terminal.semantic-read` never crashes an operation that does not
-  need it. `open`, `preview`, and `rename` work with caller-supplied paths and
-  a root; `rename` rejects identical src/dst (raw or resolved) and refuses to
-  move the root;
-- `open` lists bounded entries from explicit args or settings-provided
-  candidates, `preview` resolves one in-scope path, and `rename` validates one
-  in-scope pair (the host mediates the actual mutation);
+  cwd/title and default band width and is refreshed behind `pcall`, so a
+  missing focused terminal or a denied `terminal.semantic-read` never crashes
+  an operation that does not need it. `open`, `preview`, and `rename` work
+  with caller-supplied paths and a root; `rename` rejects identical src/dst
+  (raw or resolved) and refuses to move the root;
 - `preview` derives `kind` and `is_dir` from the original validated input's
-  trailing slash, not filesystem metadata. Equivalent relative and absolute
-  directory inputs return matching `name`, `path`, `kind`, `truncated`,
-  `parent`, and `is_dir` fields; preview result paths omit trailing slashes.
-  Scope-root exclusion, path denial, and name bounds still apply. Shared
-  resolution and listing behavior are unchanged;
-- observation event handlers refresh only the cached snapshot-derived state
-  and never touch the filesystem.
+  trailing slash, not filesystem metadata; observation event handlers refresh
+  only the cached state and never touch the filesystem.
 
-## Panel presentation (deferred)
+## Listing surface
 
-Panel presentation is not wired in v1. The former `lua/file-manager/scene.lua`
-declarative builders were dead code — `init.lua` never imported them, and no
-accepted Plugin API v1 surface mounts a scene from a command result
-(`bitty.ui.register_panel` is post-v1.0; `bitty.ui.mount` requires the
-`ui.rich` capability for slot content, which this plugin does not request).
-They were removed (M-FM-05) and directory/preview/rename wiring lands in a
-follow-up once a panel mount surface exists; `scene.lua` stays as an
-intentional empty placeholder so a builder cannot reappear without that
-wiring.
+`open` mounts one bounded declarative block on the accepted `bottom` band
+through `bitty.ui.mount`, then reuses it with `bitty.ui.update`:
+
+- the cwd comes from the semantic snapshot (newest zone with `metadata.cwd`)
+  unless `args.root` or the declared `root` setting overrides it;
+- entries come from `bitty.fs.list` through `directory.lua`, bounded exactly
+  like the pure listing module (128 entries, 128-char names, 4096-byte paths,
+  8192 payload bytes), sorted directories first, then by name;
+- display names truncate at the hosted band width (`width` setting, else the
+  snapshot width) with an ellipsis; the band shows at most 12 rows and follows
+  the selection window;
+- empty directories mount an "Empty directory" block; unreadable or
+  unavailable directories mount the typed host code (for example
+  `E_FS_SCOPE_MISMATCH` or `E_NOT_IMPLEMENTED`) instead of crashing;
+- directory rows carry an `open` click binding for navigation and file rows
+  carry a `preview` click binding. `preview` also works without a path and
+  uses the selected row, so the existing command works from a keyboard
+  binding; `open` is the navigation entry point;
+- `open` returns `true` (a boolean acknowledgement, not a `{}` table) so the
+  mounted block is the user-visible surface and dispatch does not raise a
+  banner.
 
 ## Known gaps
 
-- **Host filesystem bridge.** The current `bitty` Lua bridge
-  (`crates/bitty-lua/src/host.rs`) implements commands, events, settings,
-  store, terminal snapshots, notifications, and timers, but not a
-  host-mediated `bitty.fs` surface. Listing/preview/rename commands validate
-  and shape bounded data in pure Lua, and fail closed without a scope root;
-  the host performs real-path resolution and I/O once that surface lands and a
-  reviewed task re-adds an `fs.*` grant. Tracked as a follow-up task in
-  `bitty`.
+- **Host filesystem backend.** `bitty.fs.list` is the accepted RFC-0005
+  host bridge and the plugin consumes it, but the checked-out Bitty 0.0.24
+  runtime does not yet wire an fs backend (`PluginServices` leaves the default
+  `E_NOT_IMPLEMENTED` implementation). On such a host the listing mounts a
+  typed `E_NOT_IMPLEMENTED` block; it becomes usable as soon as the runtime
+  wires the bridge. `open` with explicit `args.paths` or the declared
+  `entries` setting still renders a listing without the backend.
+- **Band-only presentation.** The block mounts on `bottom`; `left`/`right`
+  vertical bands and a dedicated panel provider are not hosted in this
+  release.
+- **Rename presentation.** `rename` validates the pair only; the host still
+  mediates the mutation and the listing does not auto-refresh after it.
 
 ## Development
 
@@ -148,10 +162,13 @@ default) `bitty-terminal.file-manager`.
 
 ## Security
 
-Only `terminal.semantic-read` is requested. There is no panel, filesystem,
-spawn, shell interpolation, raw PTY injection, network, clipboard, or
-terminal-input authority. Path validation is root-parameterized and
-fail-closed, and any future filesystem access goes through a host-mediated
-surface only, never through direct Lua I/O (denied by the Lua Runtime
-restricted library). Report vulnerabilities through the process in the
+The manifest requests only read-only authority: `terminal.semantic-read`
+(cwd/title observation), `ui.rich` (declarative listing block), and one
+`[[capabilities.filesystem]]` read grant for `bitty.fs.list` (directory names
+and kinds, never file bytes). There is no `fs.write`, spawn, shell
+interpolation, raw PTY injection, network, clipboard, or terminal-input
+authority. Path validation is root-parameterized and fail-closed; the host
+applies its scope, sensitive-path, secret, and budget gates to every listed
+prefix. Filesystem access never goes through direct Lua I/O (denied by the Lua
+Runtime restricted library). Report vulnerabilities through the process in the
 umbrella project's security policy rather than a public issue.

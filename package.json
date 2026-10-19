@@ -9,7 +9,7 @@
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
     "@commitlint/config-conventional": "21.2.3",
-    "bitty-plugin-sdk": "github:bitty-terminal/bitty-plugin-sdk#c3fa9b0574c684eebb38b01dddfdf504d183cc20",
+    "bitty-plugin-sdk": "github:bitty-terminal/bitty-plugin-sdk#3ea8e58f6e4da0ce8dcc2c8ade7fe348ec6c9ecb",
     "lefthook": "2.1.14",
     "luaparse": "0.3.1",
     "markdownlint-cli2": "0.23.3",
