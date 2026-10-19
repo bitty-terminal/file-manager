@@ -25,6 +25,7 @@ local context = { root = root, tap = tap }
 for _, suite in ipairs({
   "spec.scope_spec",
   "spec.listing_spec",
+  "spec.directory_spec",
   "spec.scene_spec",
   "spec.init_spec",
 }) do

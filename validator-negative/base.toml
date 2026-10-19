@@ -12,7 +12,7 @@
 id = "bitty-terminal.file-manager"
 name = "File Manager"
 version = "0.1.0"
-description = "File manager listing, navigation, and preview with terminal observation only, bounded 8KiB payload"
+description = "Bounded read-only directory listing, navigation, and preview over the observed cwd"
 license = "MIT"
 
 [compat]
@@ -24,15 +24,38 @@ plugin-api = "^1.0"
 # Deny by default: omit this table entirely when the plugin needs no authority.
 # Unknown identifiers fail validation and there is no allow-all identifier.
 #
-# H-FM-02 (least privilege): `terminal.semantic-read` gates
-# `bitty.terminal.snapshot`, the read-only cwd/title observation the cache
-# refreshes from. The `panel.provider`/`panel.create` and
-# `[[capabilities.filesystem]]` read/write grants the bundled manifest carried
-# are removed: no Lua here calls a panel API, and there is no `bitty.fs`
-# surface in Plugin API v1 (`surface/bitty-plugin-api-v1.json` excludes both;
-# `bitty.ui.register_panel` is post-v1.0), so those requests were phantom
-# authority. A grant is re-added only when code actually exercises it.
+# H-FM-02 (least privilege): three read-only grants, each exercised by code.
+# - `terminal.semantic-read` gates `bitty.terminal.snapshot`, the read-only
+#   cwd/title observation the cache and default band width refresh from.
+# - `ui.rich` gates `bitty.ui.mount`/`bitty.ui.update`, the declarative
+#   `bottom` band block that renders the listing (`scene.lua`).
+# - `fs.read:**` (through `[[capabilities.filesystem]]` below) gates
+#   `bitty.fs.list`, the host-mediated directory enumeration `open` reads.
+#   `list` is read-class (RFC-0005); there is no write, process, network,
+#   clipboard, or terminal-input grant. The relative pattern keeps the grant
+#   in the accepted capability grammar; the host still applies its scope,
+#   sensitive-path, secret, and budget gates to every listed prefix.
 terminal.semantic-read = true
+ui.rich = true
+
+[[capabilities.filesystem]]
+# Read-only listing authority for the observed cwd. No `fs.write` request:
+# rename validation is policy only and the host mediates any mutation.
+access = "read"
+paths = ["**"]
+
+[settings]
+# CTX-1195 declarations: every key read through `bitty.settings.get` must be
+# declared here, otherwise the host fails the read closed with
+# `E_SETTINGS_UNDECLARED`. Values are configuration, never authority.
+# - `root`: optional scope root; empty falls back to the observed cwd.
+# - `entries`: optional bounded candidate paths (string array), used instead
+#   of a host listing when configured.
+# - `width`: band width in cells for name truncation; 0 derives it from the
+#   semantic snapshot width.
+root = { type = "string", default = "" }
+entries = { type = "string-array", default = [] }
+width = { type = "int", default = 0 }
 
 [lazy]
 # Static triggers let the host register the plugin without creating a VM.

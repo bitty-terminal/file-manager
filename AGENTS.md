@@ -19,21 +19,20 @@
 
 - Plugin id: `bitty-terminal.file-manager` (manifest `plugin.id`), repository
   `file-manager`, Lua module `lua/file-manager/`.
-- Purpose: file listing, navigation, and preview policy driven by the observed
-  terminal working directory. Presentation is deferred: panel and filesystem
-  surfaces are not wired in v1, so the plugin performs no panel or filesystem
-  I/O.
-- Authority boundary: only `terminal.semantic-read` (read-only cwd/title
-  observation) is requested. Path validation is root-parameterized: candidates
-  resolve against a caller-supplied root with no hardcoded prefix and fail
-  closed when no root is available. The former `panel.provider`,
-  `panel.create`, `fs.read`, and `fs.write` requests were phantom authority —
-  no Lua here calls a panel API or `bitty.fs`, and no accepted Plugin API v1
-  surface exposes them — so panel/filesystem presentation stays deferred until
-  the accepted contract exposes it. No process spawn, network, clipboard,
-  terminal input, or persistent-state authority beyond the declared capability;
-  no install-time code execution. A wider request needs an explicitly scoped
-  task and a reviewed security note; never widen silently.
+- Purpose: bounded read-only directory listing, navigation, and preview
+  policy driven by the observed terminal working directory. The listing
+  mounts as a declarative `bottom` band block through `bitty.ui.mount` /
+  `bitty.ui.update`; entries come from the host-mediated `bitty.fs.list`
+  bridge. Preview and rename stay bounded policy surfaces; the host mediates
+  any mutation.
+- Authority boundary: three read-only grants only. `terminal.semantic-read`
+  gates cwd/title observation, `ui.rich` gates the declarative listing block,
+  and one `[[capabilities.filesystem]]` read grant gates `bitty.fs.list`
+  (directory names/kinds, never file bytes). There is no `fs.write`, process
+  spawn, network, clipboard, terminal input, or persistent-state authority
+  beyond the declared settings/store surfaces; no install-time code execution.
+  A wider request needs an explicitly scoped task and a reviewed security
+  note; never widen silently.
 - Origin: this package is the independent first-party realization created by
   the OQ-053 bundled-plugin split decision ([bitty](https://github.com/bitty-terminal/bitty) `CTX-0399`).
 
