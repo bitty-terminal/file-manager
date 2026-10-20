@@ -20,6 +20,113 @@ plugin split decision (OQ-053, `bitty-plugins-docs`
 was scaffolded from
 [bitty-plugin-template](https://github.com/bitty-terminal/bitty-plugin-template).
 
+## Overview
+
+Bitty File Manager lists directory entries in a bounded band over the observed
+terminal working directory and supports keyboard navigation and preview.
+Directory enumeration goes through the host-mediated `bitty.fs.list` bridge;
+the plugin validates and shapes the result, never calling Lua I/O directly.
+It requests read-only authority only, and `rename` validates one pair while the
+host mediates any mutation. Presentation is a declarative band block; there is
+no process, network, or terminal-input surface.
+
+## Install
+
+Prerequisites: Bitty `>=0.0.24,<0.1` and Plugin API `^1.0` (from
+`bitty-plugin.toml` `[compat]`).
+
+```sh
+bitty plugin install https://github.com/bitty-terminal/file-manager.git
+bitty plugin enable bitty-terminal.file-manager
+bitty plugin list   # confirm state and grants
+```
+
+From a local checkout:
+
+```sh
+bitty plugin install ./file-manager --yes
+bitty plugin enable bitty-terminal.file-manager
+```
+
+`bitty plugin list` confirms activation: the entry must be enabled and show
+`terminal.semantic-read`, `ui.rich`, and the read-only filesystem grant. A
+disabled entry carries a `disabled_reason`; see
+[Troubleshooting](#troubleshooting).
+
+## Commands
+
+| Command                               | What it does                                                                                         | Arguments                                                           | Default keybinding |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------ |
+| `bitty-terminal.file-manager:open`    | Mount or update the bounded directory listing for the scope root and select one row.                 | `root` (string), `paths` (array of strings), `selected` (integer)   | None               |
+| `bitty-terminal.file-manager:preview` | Show the bounded preview entry for one in-scope path, or for the selected row when `path` is absent. | `path` (string, optional), `root` (string)                          | None               |
+| `bitty-terminal.file-manager:rename`  | Validate one user-confirmed rename inside the scope root; the host performs the mutation.            | `src` (string, required), `dst` (string, required), `root` (string) | None               |
+
+`open` reads the host listing unless `paths` (or the `entries` setting) supplies
+bounded candidate paths. `preview` without `path` uses the current selection,
+so it is the command to bind to a key.
+
+## Configuration
+
+Settings are declared in `bitty-plugin.toml` `[settings]` and resolved from
+`$XDG_CONFIG_HOME/bitty/plugins/bitty-terminal.file-manager.lua`. Every key is
+user-owned; the plugin never writes settings.
+
+| Key       | Type         | Default | Description                                                                                                                     | Applies         |
+| --------- | ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `root`    | string       | `""`    | Optional scope root. Empty uses the mounted listing root, then the observed terminal cwd; a bare `/` is treated as unavailable. | Next activation |
+| `entries` | string array | `[]`    | Optional bounded candidate paths for `open`. When non-empty they replace the host listing; paths still resolve against `root`.  | Next activation |
+| `width`   | integer      | `0`     | Band width in cells for name truncation. `0` derives the width from the semantic snapshot.                                      | Next activation |
+
+```lua
+-- $XDG_CONFIG_HOME/bitty/plugins/bitty-terminal.file-manager.lua
+return {
+  root = "/srv/project",
+  entries = { "src", "tests", "README.md" },
+  width = 0,
+}
+```
+
+The host resolves settings at activation and pins them to the generation, so
+edit the file and reopen Bitty to apply a change. Wrong-typed values are
+ignored; a missing or unavailable root fails closed instead of listing an
+unbounded path.
+
+## Keybindings
+
+The plugin installs no keyboard bindings. Directory rows carry `open` click
+bindings and file rows carry `preview` click bindings. Bind a command yourself
+in `$XDG_CONFIG_HOME/bitty/init.lua`; user mappings keep precedence:
+
+```lua
+return {
+  keymaps = {
+    {
+      chord = "ctrl+alt+f",
+      action = "bitty-terminal.file-manager:open",
+      context = "global",
+    },
+    {
+      chord = "ctrl+alt+p",
+      action = "bitty-terminal.file-manager:preview",
+      context = "global",
+    },
+  },
+}
+```
+
+## Troubleshooting
+
+| Symptom / error           | Meaning                                                                                                                                                                                                          | What to do                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E_INCOMPATIBLE`          | The host application or Plugin API version is outside `[compat]`; the plugin disables with no partial activation.                                                                                                | Upgrade Bitty or install a file-manager revision whose ranges admit your host. Do not edit the manifest ranges.                                                     |
+| `E_SETTINGS_UNDECLARED`   | The plugin read a settings key absent from `[settings]`. This is a plugin defect.                                                                                                                                | All three keys are declared; if it still appears, report it with `bitty plugin info bitty-terminal.file-manager` and run `bitty --safe` meanwhile.                  |
+| Capability denied         | `E_CAPABILITY_DENIED` (class `runtime`): without `terminal.semantic-read` there is no observed cwd or snapshot width; without `ui.rich` no band mounts; without the read filesystem grant the listing is denied. | Reinstall and approve the grants, or inspect granted versus requested capabilities with `bitty plugin list`. Supply `root` explicitly if cwd observation is denied. |
+| `E_NOT_IMPLEMENTED` block | The host runtime has not wired the `bitty.fs.list` backend yet; the band shows the typed error instead of crashing.                                                                                              | Use explicit `paths` or the `entries` setting, or upgrade Bitty when the backend ships.                                                                             |
+| `E_SCOPE_UNAVAILABLE`     | No scope root is available (no `root` argument, no `root` setting, no mounted root, and no observed cwd).                                                                                                        | Set `root`, pass `root` in the command, or focus a terminal whose cwd is observable.                                                                                |
+| `E_FS_DENIED`             | A path is outside the scope root, empty, over 4096 bytes, contains control characters, or a rename pair is invalid.                                                                                              | Use a path equal to or nested under the root; source and destination must differ and neither may be the root itself.                                                |
+| `E_FS_SCOPE_MISMATCH`     | The host rejected the requested prefix against its own scope or sensitive-path policy.                                                                                                                           | Choose a prefix the host policy permits; the plugin never retries or escalates.                                                                                     |
+| `E_SPAWN_FAILED`          | Not applicable: this plugin spawns no process and opens no socket.                                                                                                                                               | —                                                                                                                                                                   |
+
 ## Status
 
 The plugin package, manifest, listing surface, and policy are implemented and
@@ -146,19 +253,6 @@ the only optional tool and its check skips with exit 0 when absent.
 `just test-negative` (R24) rejects every `validator-negative/*.toml` fixture
 through the SDK linter and accepts the `base.toml` control, failing when the
 fixture set or the pinned linter is missing rather than passing vacuously.
-
-## Install
-
-An external package is installed from a local checkout with the Bitty CLI:
-
-```sh
-bitty plugin install /path/to/file-manager
-```
-
-The registry entry in
-[bitty-plugins](https://github.com/bitty-terminal/bitty-plugins) points at this
-repository; this plugin previously shipped as a bundled (staged, disabled by
-default) `bitty-terminal.file-manager`.
 
 ## Security
 
