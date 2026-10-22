@@ -16,8 +16,10 @@ description = "Bounded read-only directory listing, navigation, and preview for 
 license = "MIT"
 
 [compat]
-# Unchanged from the former bundled `bitty-terminal.file-manager` realization.
-bitty = ">=0.0.24,<0.1"
+# The floor is inherited from the former bundled `bitty-terminal.file-manager`
+# realization. Compatibility is minimum-only: there is no declared ceiling, so
+# a newer host is admitted instead of being rejected by an upper bound.
+bitty = ">=0.0.24"
 plugin-api = "^1.0"
 
 [capabilities]
