@@ -12,7 +12,7 @@
 id = "bitty-terminal.file-manager"
 name = "File Manager"
 version = "0.1.0"
-description = "Bounded read-only directory listing, navigation, and preview over the observed cwd"
+description = "Bounded read-only directory listing, navigation, and preview for a caller-chosen root"
 license = "MIT"
 
 [compat]

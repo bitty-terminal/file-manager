@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Describe the manifest scope accurately: `Bounded read-only directory
+listing, navigation, and preview for a caller-chosen root`. The previous
+  text named only the observed cwd, but M-FM-04 resolves every path against a
+  caller-supplied `root` (argument, setting, mounted root, then cached cwd).
 - **Root-parameterized scope (M-FM-04, M-FM-03):** removed the hardcoded
   `~/projects/**` prefix. `scope.lua` now mirrors the git-panel model
   (`is_absolute_path`, `is_within_root`, `join_root`, `resolve`), so arbitrary
