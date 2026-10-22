@@ -32,8 +32,9 @@ no process, network, or terminal-input surface.
 
 ## Install
 
-Prerequisites: Bitty `>=0.0.24,<0.1` and Plugin API `^1.0` (from
-`bitty-plugin.toml` `[compat]`).
+Prerequisites: Bitty `>=0.0.24` and Plugin API `^1.0` (from
+`bitty-plugin.toml` `[compat]`). There is no declared ceiling, so a newer host
+is admitted rather than rejected by an upper bound.
 
 ```sh
 bitty plugin install https://github.com/bitty-terminal/file-manager.git
