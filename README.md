@@ -103,12 +103,12 @@ return {
   keymaps = {
     {
       chord = "ctrl+alt+f",
-      action = "bitty-terminal.file-manager:open",
+      action = "command:bitty-terminal.file-manager:open",
       context = "global",
     },
     {
       chord = "ctrl+alt+p",
-      action = "bitty-terminal.file-manager:preview",
+      action = "command:bitty-terminal.file-manager:preview",
       context = "global",
     },
   },
