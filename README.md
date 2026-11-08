@@ -30,6 +30,15 @@ It requests read-only authority only, and `rename` validates one pair while the
 host mediates any mutation. Presentation is a declarative band block; there is
 no process, network, or terminal-input surface.
 
+Open it with `bitty-terminal.file-manager:open`; the plugin installs no default
+chord. With no arguments it lists the observed terminal cwd in a `bottom` band
+of at most 12 rows. For example, run `bitty-terminal.file-manager:open` and the
+band lists the focused pane's directory with the first row selected; run it
+again with `{ delta = 1 }` to move the selection down, then
+`bitty-terminal.file-manager:preview` with no arguments to preview the selected
+entry. Directory rows carry an `open` click target and file rows carry a
+`preview` target.
+
 ## Install
 
 Prerequisites: Bitty `>=0.0.24` and Plugin API `^1.0` (from
@@ -56,11 +65,11 @@ disabled entry carries a `disabled_reason`; see
 
 ## Commands
 
-| Command                               | What it does                                                                                         | Arguments                                                           | Default keybinding |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------ |
-| `bitty-terminal.file-manager:open`    | Mount or update the bounded directory listing for the scope root and select one row.                 | `root` (string), `paths` (array of strings), `selected` (integer)   | None               |
-| `bitty-terminal.file-manager:preview` | Show the bounded preview entry for one in-scope path, or for the selected row when `path` is absent. | `path` (string, optional), `root` (string)                          | None               |
-| `bitty-terminal.file-manager:rename`  | Validate one user-confirmed rename inside the scope root; the host performs the mutation.            | `src` (string, required), `dst` (string, required), `root` (string) | None               |
+| Command                               | What it does                                                                                         | Arguments                                                                            | Default keybinding |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------ |
+| `bitty-terminal.file-manager:open`    | Mount or update the bounded directory listing for the scope root and select one row.                 | `root` (string), `paths` (array of strings), `selected` (integer), `delta` (integer) | None               |
+| `bitty-terminal.file-manager:preview` | Show the bounded preview entry for one in-scope path, or for the selected row when `path` is absent. | `path` (string, optional), `root` (string)                                           | None               |
+| `bitty-terminal.file-manager:rename`  | Validate one user-confirmed rename inside the scope root; the host performs the mutation.            | `src` (string, required), `dst` (string, required), `root` (string)                  | None               |
 
 `open` reads the host listing unless `paths` (or the `entries` setting) supplies
 bounded candidate paths. `preview` without `path` uses the current selection,
