@@ -7,6 +7,7 @@ local ROOT = "/srv/git/repo"
 
 local COMMANDS = {
   PLUGIN_ID .. ":open",
+  PLUGIN_ID .. ":close",
   PLUGIN_ID .. ":preview",
   PLUGIN_ID .. ":rename",
 }
@@ -136,7 +137,7 @@ end
 local function run(context)
   local tap = context.tap
 
-  -- Activation registers the three manifest commands and the three declared
+  -- Activation registers the four manifest commands and the three declared
   -- observation events, and mounts nothing until a command runs.
   do
     local host = full_host()
@@ -195,6 +196,42 @@ local function run(context)
     tap.equal(#host.mounts, 1, "second open does not mount a new block")
     tap.equal(#host.updates, 1, "second open updates the existing block")
     tap.equal(host.updates[1].handle, host.mounts[1].handle, "update targets the mounted handle")
+  end
+
+  -- `close` hides the mounted block through ui.update instead of unmounting
+  -- (Plugin API v1 has no ui.unmount) and keeps the handle for a reopen, so a
+  -- bound chord can always dismiss the listing.
+  do
+    local host = full_host()
+    local plugin = activate(host)
+    host:run("open", { root = ROOT })
+    local handle = host.mounts[1].handle
+    local result = host:run("close", {})
+    tap.equal(type(result), "table", "close returns a state table")
+    tap.equal(result.changed, true, "close reports the listing was mounted")
+    tap.equal(result.handle, handle, "close keeps the block handle")
+    tap.equal(#host.mounts, 1, "close mounts nothing")
+    tap.equal(#host.updates, 1, "close updates the mounted block")
+    tap.equal(host.updates[1].handle, handle, "close targets the mounted handle")
+    local hidden = host.updates[1].component
+    tap.equal(hidden.kind, "Column", "hidden component is a column")
+    tap.equal(children(hidden)[1].text, "", "hidden component renders an empty row")
+    local state = plugin.listing_state()
+    tap.equal(#state.entries, 0, "close clears the cached entries")
+    tap.equal(state.root, nil, "close clears the cached root")
+    host:run("open", { root = ROOT })
+    tap.equal(#host.mounts, 1, "reopen reuses the mounted block")
+    tap.equal(#host.updates, 2, "reopen updates the same handle")
+  end
+
+  -- Closing with nothing mounted is a no-op: no mount, no update, no raise.
+  do
+    local host = full_host()
+    activate(host)
+    local result = host:run("close", {})
+    tap.equal(result.changed, false, "close without a listing reports changed=false")
+    tap.equal(#host.mounts, 0, "close mounts nothing")
+    tap.equal(#host.updates, 0, "close issues no host update")
   end
 
   -- Explicit args still take precedence and resolve against the caller root.

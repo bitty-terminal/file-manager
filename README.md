@@ -68,12 +68,20 @@ disabled entry carries a `disabled_reason`; see
 | Command                               | What it does                                                                                         | Arguments                                                                            | Default keybinding |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------ |
 | `bitty-terminal.file-manager:open`    | Mount or update the bounded directory listing for the scope root and select one row.                 | `root` (string), `paths` (array of strings), `selected` (integer), `delta` (integer) | None               |
+| `bitty-terminal.file-manager:close`   | Hide the mounted listing; the block handle is reused by the next `open`.                             | None                                                                                 | None               |
 | `bitty-terminal.file-manager:preview` | Show the bounded preview entry for one in-scope path, or for the selected row when `path` is absent. | `path` (string, optional), `root` (string)                                           | None               |
 | `bitty-terminal.file-manager:rename`  | Validate one user-confirmed rename inside the scope root; the host performs the mutation.            | `src` (string, required), `dst` (string, required), `root` (string)                  | None               |
 
 `open` reads the host listing unless `paths` (or the `entries` setting) supplies
 bounded candidate paths. `preview` without `path` uses the current selection,
 so it is the command to bind to a key.
+
+`close` hides the listing and returns `{ changed, handle }`. The block is
+non-focusable, so `Esc` never reaches the plugin and the host chrome offers no
+way to hide a mounted block: bind `close` next to `open`, otherwise an open
+listing stays on screen until the plugin generation ends. Plugin API v1 has no
+`ui.unmount`, so `close` updates the existing handle with a row-less component
+and the next `open` reuses that same block instead of consuming another one.
 
 ## Configuration
 
@@ -118,6 +126,11 @@ return {
     {
       chord = "ctrl+alt+p",
       action = "command:bitty-terminal.file-manager:preview",
+      context = "global",
+    },
+    {
+      chord = "ctrl+alt+shift+f",
+      action = "command:bitty-terminal.file-manager:close",
       context = "global",
     },
   },
@@ -238,6 +251,10 @@ through `bitty.ui.mount`, then reuses it with `bitty.ui.update`:
 - **Band-only presentation.** The block mounts on `bottom`; `left`/`right`
   vertical bands and a dedicated panel provider are not hosted in this
   release.
+- **No `ui.unmount`.** Plugin API v1 cannot release a mounted block, so
+  `close` hides the rows and keeps the handle for the generation
+  ([bitty#3106](https://github.com/bitty-terminal/bitty/issues/3106)); the
+  eight-block-per-plugin budget is unaffected because the plugin mounts one.
 - **Rename presentation.** `rename` validates the pair only; the host still
   mediates the mutation and the listing does not auto-refresh after it.
 

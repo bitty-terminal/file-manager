@@ -33,7 +33,7 @@ local scope = require("file-manager.scope")
 
 local M = {}
 
-M.COMMANDS = { "open", "preview", "rename" }
+M.COMMANDS = { "open", "close", "preview", "rename" }
 M.EVENTS = { "terminal.cwd-changed", "terminal.title-changed", "focus.changed" }
 M.SLOT = "bottom"
 
@@ -308,6 +308,39 @@ local function open_entries(args)
   return render()
 end
 
+-- Hide the mounted listing. The band block is non-focusable, so `Esc` never
+-- reaches the plugin and the host exposes no chrome affordance to hide a
+-- mounted block: without this command an `open` stays on screen until the
+-- plugin generation ends. `ui.unmount` does not exist in Plugin API v1
+-- (bitty#3106), so the handle is reused with a row-less component instead of
+-- dropped, and a later `open` updates that same block.
+--
+-- Idempotent: with nothing mounted the command clears the cached listing and
+-- reports `changed = false` without a host call.
+local function close_listing()
+  local had_listing = view.handle ~= nil
+  if had_listing then
+    local ui = bitty.ui
+    if type(ui) ~= "table" or type(ui.update) ~= "function" then
+      fail("E_UI_UNAVAILABLE", "host has no ui.update surface")
+    end
+    local ok, updated = pcall(ui.update, view.handle, scene.hidden())
+    if not ok then
+      error(typed_error(updated, "E_UI_UNAVAILABLE"), 0)
+    end
+    if updated ~= true then
+      -- A rejected update leaves the previous rows on screen; keep the handle
+      -- so a later close can retry it instead of leaking a visible block.
+      fail("E_UI_UNAVAILABLE", "host rejected the hidden listing block")
+    end
+  end
+  view.root = nil
+  view.entries = {}
+  view.selected = 1
+  view.error = nil
+  return { changed = had_listing, handle = view.handle }
+end
+
 -- Resolve one preview entry. Without `path`, the currently selected listing
 -- row is used, so the existing `preview` command also works from a keyboard
 -- binding. The listing re-renders with the selection highlighted.
@@ -396,6 +429,15 @@ bitty.commands.register({
 })
 
 bitty.commands.register({
+  id = "close",
+  title = "File Manager: close",
+  description = "Hide the mounted directory listing; the block handle is reused by the next open.",
+  run = function(_args)
+    return close_listing()
+  end,
+})
+
+bitty.commands.register({
   id = "preview",
   title = "File Manager: preview",
   description = "Show the bounded preview entry for one in-scope path.",
@@ -439,6 +481,7 @@ function M.listing_state()
 end
 
 M.open_entries = open_entries
+M.close_listing = close_listing
 M.preview_entry = preview_entry
 M.rename_pair = rename_pair
 

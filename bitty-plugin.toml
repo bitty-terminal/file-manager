@@ -11,7 +11,7 @@
 [plugin]
 id = "bitty-terminal.file-manager"
 name = "File Manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bounded read-only directory listing, navigation, and preview for a caller-chosen root"
 license = "MIT"
 
@@ -65,6 +65,7 @@ width = { type = "int", default = 0 }
 # All three commands and three events are unchanged from the bundled manifest.
 commands = [
   "bitty-terminal.file-manager:open",
+  "bitty-terminal.file-manager:close",
   "bitty-terminal.file-manager:preview",
   "bitty-terminal.file-manager:rename",
 ]
