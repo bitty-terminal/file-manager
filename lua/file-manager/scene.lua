@@ -144,8 +144,9 @@ end
 
 -- Hidden block. Plugin API v1 has no `ui.unmount` (bitty#3106), so closing the
 -- listing reuses the mounted handle with this component: one empty `Text`
--- child reserves no band row, which is the same shape the DevTools live view
--- uses to hide its blocks.
+-- child reserves no band row. (The DevTools live view hides its blocks with a
+-- bare empty `Text` rather than a wrapper `Column`; the visible effect is the
+-- same, the node shape is not.)
 function M.hidden()
   return { kind = "Column", children = { text("") } }
 end

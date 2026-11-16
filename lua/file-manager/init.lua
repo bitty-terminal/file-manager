@@ -338,10 +338,10 @@ local function close_listing()
     error(typed_error(updated, "E_UI_UNAVAILABLE"), 0)
   end
   if updated ~= true then
-    -- A rejected update leaves the previous rows on screen; keep the handle and
-    -- the visible state so a later close can retry it instead of claiming the
-    -- block was dismissed.
-    fail("E_UI_UNAVAILABLE", "host rejected the hidden listing block")
+    -- `ui.update` returns false for a stale handle, which means the block is
+    -- already gone: drop the handle and finish the dismissal instead of raising
+    -- on every later attempt (the same self-heal `mount_component` performs).
+    view.handle = nil
   end
   view.visible = false
   return { changed = true, handle = view.handle }
@@ -439,7 +439,11 @@ bitty.commands.register({
   title = "File Manager: close",
   description = "Hide the mounted directory listing; the block handle is reused by the next open.",
   run = function(_args)
-    return close_listing()
+    -- Command dispatch raises a banner for a table return, so the command
+    -- reports success as a boolean; `M.close_listing()` keeps the state table
+    -- for programmatic callers and tests.
+    close_listing()
+    return true
   end,
 })
 
