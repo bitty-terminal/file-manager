@@ -177,4 +177,21 @@ function M.bound_selection(entries)
   return out
 end
 
+-- Filter dotfiles unless `show_hidden` is true. Pure.
+function M.filter_hidden(entries, show_hidden)
+  if type(entries) ~= "table" then
+    return {}
+  end
+  if show_hidden == true then
+    return entries
+  end
+  local out = {}
+  for _, entry in ipairs(entries) do
+    if is_entry_table(entry) and type(entry.name) == "string" and string.sub(entry.name, 1, 1) ~= "." then
+      out[#out + 1] = entry
+    end
+  end
+  return out
+end
+
 return M

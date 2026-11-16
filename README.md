@@ -7,8 +7,10 @@ observed terminal working directory with host-mediated filesystem access.
 - Plugin id: `bitty-terminal.file-manager`
 - Lua module: `lua/file-manager/`
 - Capabilities: `terminal.semantic-read` (read-only cwd/title observation),
-  `ui.rich` (declarative listing block), and read-only `fs.read:**`
-  (`bitty.fs.list` directory enumeration)
+  `ui.rich` (declarative panel/listing scene), `panel.create` (Dwindle rich
+  panel creation), `panel.focus` (panel dismissal via `bitty.panel.close`), and
+  read-only `fs.read:**` (`bitty.fs.list` directory enumeration and bounded
+  `bitty.fs.read` file preview)
 - Lazy commands: `bitty-terminal.file-manager:open`, `:preview`, `:rename`
 - Lazy events: `terminal.cwd-changed`, `terminal.title-changed`,
   `focus.changed`
@@ -22,22 +24,29 @@ was scaffolded from
 
 ## Overview
 
-Bitty File Manager lists directory entries in a bounded band over the observed
-terminal working directory and supports keyboard navigation and preview.
-Directory enumeration goes through the host-mediated `bitty.fs.list` bridge;
-the plugin validates and shapes the result, never calling Lua I/O directly.
-It requests read-only authority only, and `rename` validates one pair while the
-host mediates any mutation. Presentation is a declarative band block; there is
-no process, network, or terminal-input surface.
+Bitty File Manager lists directory entries in a plugin-owned Dwindle tiling
+panel (falling back to a bounded `bottom` band on hosts without `bitty.panel`)
+over the observed terminal working directory and supports focus-driven keyboard
+and mouse-wheel navigation with a live split preview pane. Directory enumeration
+and file preview go through the host-mediated `bitty.fs.list` and
+`bitty.fs.read` bridges; the plugin validates and shapes the result, never
+calling Lua I/O directly. It requests read-only filesystem authority plus panel
+lifecycle/focus (`panel.create`, `panel.focus`), and `rename` validates one pair
+while the host mediates any mutation.
 
 Open it with `bitty-terminal.file-manager:open`; the plugin installs no default
-chord. With no arguments it lists the observed terminal cwd in a `bottom` band
-of at most 12 rows. For example, run `bitty-terminal.file-manager:open` and the
-band lists the focused pane's directory with the first row selected; run it
-again with `{ delta = 1 }` to move the selection down, then
-`bitty-terminal.file-manager:preview` with no arguments to preview the selected
-entry. Directory rows carry an `open` click target and file rows carry a
-`preview` target.
+global chord. When `bitty.panel` is available, `open` creates a
+`{ type = "rich" }` Dwindle panel with a header bar (current path, item count,
+hidden-files indicator), an entry list with `[DIR]`/`[FILE]`/`[LINK]` badges and
+sizes, and a live split preview pane. Focus-driven `panel.input` bindings inside
+the panel:
+
+- `j` / `Down`, `k` / `Up`, mouse wheel: move selection
+- `Enter` / `l` / `Right`: enter selected directory or preview file
+- `Backspace` / `h` / `Left`: go to parent directory (bounded to scope root)
+- `.`: toggle hidden dotfiles
+- `r`: refresh current directory
+- `q`: close the panel (`bitty.panel.close`)
 
 ## Install
 
