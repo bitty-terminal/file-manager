@@ -46,6 +46,7 @@ local cache = {
 -- `bitty.ui.update`; the entry list stays bounded by `listing.lua`.
 local view = {
   handle = nil,
+  visible = false,
   root = nil,
   entries = {},
   selected = 1,
@@ -215,6 +216,7 @@ local function mount_component(component)
   if view.handle ~= nil and type(ui.update) == "function" then
     local ok, updated = pcall(ui.update, view.handle, component)
     if ok and updated == true then
+      view.visible = true
       return true, nil
     end
     view.handle = nil
@@ -227,6 +229,7 @@ local function mount_component(component)
     return false, typed_error(nil, "E_UI_UNAVAILABLE")
   end
   view.handle = handle
+  view.visible = true
   return true, nil
 end
 
@@ -315,30 +318,33 @@ end
 -- (bitty#3106), so the handle is reused with a row-less component instead of
 -- dropped, and a later `open` updates that same block.
 --
--- Idempotent: with nothing mounted the command clears the cached listing and
--- reports `changed = false` without a host call.
+-- Presentation only: the cached root, entries, selection, and error survive, so
+-- `preview` (and an argument-free `open`) still describe the listing that was
+-- dismissed instead of reporting an empty directory.
+--
+-- Idempotent: with the block already hidden the command reports
+-- `changed = false` without a host call. `visible` tracks the presentation
+-- separately from the reused `handle`, which stays non-nil after a close.
 local function close_listing()
-  local had_listing = view.handle ~= nil
-  if had_listing then
-    local ui = bitty.ui
-    if type(ui) ~= "table" or type(ui.update) ~= "function" then
-      fail("E_UI_UNAVAILABLE", "host has no ui.update surface")
-    end
-    local ok, updated = pcall(ui.update, view.handle, scene.hidden())
-    if not ok then
-      error(typed_error(updated, "E_UI_UNAVAILABLE"), 0)
-    end
-    if updated ~= true then
-      -- A rejected update leaves the previous rows on screen; keep the handle
-      -- so a later close can retry it instead of leaking a visible block.
-      fail("E_UI_UNAVAILABLE", "host rejected the hidden listing block")
-    end
+  if not view.visible then
+    return { changed = false, handle = view.handle }
   end
-  view.root = nil
-  view.entries = {}
-  view.selected = 1
-  view.error = nil
-  return { changed = had_listing, handle = view.handle }
+  local ui = bitty.ui
+  if type(ui) ~= "table" or type(ui.update) ~= "function" then
+    fail("E_UI_UNAVAILABLE", "host has no ui.update surface")
+  end
+  local ok, updated = pcall(ui.update, view.handle, scene.hidden())
+  if not ok then
+    error(typed_error(updated, "E_UI_UNAVAILABLE"), 0)
+  end
+  if updated ~= true then
+    -- A rejected update leaves the previous rows on screen; keep the handle and
+    -- the visible state so a later close can retry it instead of claiming the
+    -- block was dismissed.
+    fail("E_UI_UNAVAILABLE", "host rejected the hidden listing block")
+  end
+  view.visible = false
+  return { changed = true, handle = view.handle }
 end
 
 -- Resolve one preview entry. Without `path`, the currently selected listing
@@ -477,6 +483,7 @@ function M.listing_state()
     selected = view.selected,
     error = view.error,
     handle = view.handle,
+    visible = view.visible,
   }
 end
 
