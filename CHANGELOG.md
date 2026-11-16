@@ -71,6 +71,14 @@ listing, navigation, and preview for a caller-chosen root`. The previous
 
 ### Added
 
+- **`close` command:** the mounted `bottom` band listing can now be hidden.
+  The block is non-focusable, so `Esc` never reached the plugin and the host
+  offers no chrome affordance for a mounted block; without this command an
+  `open` stayed on screen until the plugin generation ended. `close` updates
+  the existing handle with a row-less component (Plugin API v1 has no
+  `ui.unmount`) and is idempotent: with nothing mounted it reports
+  `changed = false` and issues no host call. README documents the command, a
+  paired keybinding example, and the handle-reuse gap.
 - **Listing surface (#29):** `open` now mounts a bounded declarative
   `Text`/`Row`/`Column`/`List` block on the accepted `bottom` band through
   `bitty.ui.mount` and reuses it through `bitty.ui.update`. Directory rows

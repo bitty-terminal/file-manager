@@ -142,6 +142,14 @@ function M.empty(root, opts)
   }
 end
 
+-- Hidden block. Plugin API v1 has no `ui.unmount` (bitty#3106), so closing the
+-- listing reuses the mounted handle with this component: one empty `Text`
+-- child reserves no band row, which is the same shape the DevTools live view
+-- uses to hide its blocks.
+function M.hidden()
+  return { kind = "Column", children = { text("") } }
+end
+
 -- Typed error block. The command returns normally; the band explains why the
 -- listing is unavailable instead of dispatching a crash.
 function M.error(err, root, opts)
