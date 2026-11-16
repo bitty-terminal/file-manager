@@ -87,7 +87,12 @@ The dismissal is presentation only. `close` keeps the cached root, entries,
 selection, and error, so `preview` (or an argument-free `open`) still describes
 the listing it dismissed instead of reporting an empty directory. It is also
 idempotent: the presentation state is tracked separately from the reused
-handle, so a second `close` reports `changed = false` and issues no host call.
+handle, so a second `close` issues no host call.
+
+The command returns `true` so a bound key raises no notification banner;
+`M.close_listing()` returns `{ changed, handle }` for programmatic callers and
+tests. A stale handle (`ui.update` returning `false`) is dropped and the
+dismissal completes, mirroring how `open` self-heals a stale handle.
 
 ## Configuration
 

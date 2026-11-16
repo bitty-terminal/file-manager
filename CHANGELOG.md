@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`close` return value and stale handle (#41):** the command returned the
+  state table, and dispatch raises a banner for table returns, so every bound
+  keypress displayed `{changed=true, handle=n}`; it returns `true` now and
+  `M.close_listing()` keeps the table for programmatic callers. A stale handle
+  (`ui.update` returning `false`) drops the handle and finishes the dismissal
+  instead of raising on every later attempt.
 - **`close` keeps the listing (#39):** the dismissal is
   presentation only now. It hides the block and keeps the cached root,
   entries, selection, and error, so `preview` or an argument-free `open` right
