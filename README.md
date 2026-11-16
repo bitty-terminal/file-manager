@@ -83,6 +83,12 @@ listing stays on screen until the plugin generation ends. Plugin API v1 has no
 `ui.unmount`, so `close` updates the existing handle with a row-less component
 and the next `open` reuses that same block instead of consuming another one.
 
+The dismissal is presentation only. `close` keeps the cached root, entries,
+selection, and error, so `preview` (or an argument-free `open`) still describes
+the listing it dismissed instead of reporting an empty directory. It is also
+idempotent: the presentation state is tracked separately from the reused
+handle, so a second `close` reports `changed = false` and issues no host call.
+
 ## Configuration
 
 Settings are declared in `bitty-plugin.toml` `[settings]` and resolved from
@@ -252,7 +258,8 @@ through `bitty.ui.mount`, then reuses it with `bitty.ui.update`:
   vertical bands and a dedicated panel provider are not hosted in this
   release.
 - **No `ui.unmount`.** Plugin API v1 cannot release a mounted block, so
-  `close` hides the rows and keeps the handle for the generation
+  `close` hides the rows and keeps the handle (and the cached listing) for the
+  generation
   ([bitty#3106](https://github.com/bitty-terminal/bitty/issues/3106)); the
   eight-block-per-plugin budget is unaffected because the plugin mounts one.
 - **Rename presentation.** `rename` validates the pair only; the host still

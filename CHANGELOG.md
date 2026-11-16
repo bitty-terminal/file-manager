@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`close` keeps the listing (#39):** the dismissal is
+  presentation only now. It hides the block and keeps the cached root,
+  entries, selection, and error, so `preview` or an argument-free `open` right
+  after a close still describes the real directory instead of reporting an
+  empty one. `visible` is tracked separately from the reused block handle, so
+  a second `close` reports `changed = false` and performs no host call, as
+  documented.
 - **Preview directory metadata (PLUG-APP-010, #14):** derive `kind` and
   `is_dir` together from the original validated input and omit trailing
   slashes from preview result paths. Equivalent relative and absolute

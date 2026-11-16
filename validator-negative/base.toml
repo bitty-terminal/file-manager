@@ -11,7 +11,7 @@
 [plugin]
 id = "bitty-terminal.file-manager"
 name = "File Manager"
-version = "0.1.1"
+version = "0.1.2"
 description = "Bounded read-only directory listing, navigation, and preview for a caller-chosen root"
 license = "MIT"
 

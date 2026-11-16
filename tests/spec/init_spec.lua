@@ -200,15 +200,17 @@ local function run(context)
 
   -- `close` hides the mounted block through ui.update instead of unmounting
   -- (Plugin API v1 has no ui.unmount) and keeps the handle for a reopen, so a
-  -- bound chord can always dismiss the listing.
+  -- bound chord can always dismiss the listing. It is presentation only: the
+  -- cached listing survives so a later preview still describes it.
   do
     local host = full_host()
     local plugin = activate(host)
     host:run("open", { root = ROOT })
     local handle = host.mounts[1].handle
+    local listed = #plugin.listing_state().entries
     local result = host:run("close", {})
     tap.equal(type(result), "table", "close returns a state table")
-    tap.equal(result.changed, true, "close reports the listing was mounted")
+    tap.equal(result.changed, true, "close reports a visible listing")
     tap.equal(result.handle, handle, "close keeps the block handle")
     tap.equal(#host.mounts, 1, "close mounts nothing")
     tap.equal(#host.updates, 1, "close updates the mounted block")
@@ -217,11 +219,45 @@ local function run(context)
     tap.equal(hidden.kind, "Column", "hidden component is a column")
     tap.equal(children(hidden)[1].text, "", "hidden component renders an empty row")
     local state = plugin.listing_state()
-    tap.equal(#state.entries, 0, "close clears the cached entries")
-    tap.equal(state.root, nil, "close clears the cached root")
+    tap.equal(state.visible, false, "close marks the block hidden")
+    tap.equal(state.root, ROOT, "close keeps the cached root")
+    tap.equal(#state.entries, listed, "close keeps the cached entries")
+    tap.ok(listed > 0, "the fixture listed at least one entry")
     host:run("open", { root = ROOT })
     tap.equal(#host.mounts, 1, "reopen reuses the mounted block")
     tap.equal(#host.updates, 2, "reopen updates the same handle")
+    tap.equal(plugin.listing_state().visible, true, "reopen marks the block visible")
+  end
+
+  -- A dismissal is presentation only: preview right after a close resolves the
+  -- real listing instead of reporting an empty directory.
+  do
+    local host = full_host()
+    local plugin = activate(host)
+    host:run("open", { root = ROOT, selected = 1 })
+    local selected_path = plugin.listing_state().entries[1].path
+    host:run("close", {})
+    local result = host:run("preview", {})
+    tap.equal(type(result), "table", "preview after close succeeds")
+    local state = plugin.listing_state()
+    tap.equal(state.visible, true, "preview re-shows the block")
+    tap.equal(state.selected, 1, "preview keeps the selection")
+    tap.equal(state.entries[1].path, selected_path, "preview still sees the listing")
+    tap.equal(state.root, ROOT, "preview still sees the root")
+  end
+
+  -- Idempotent: a second close reports changed=false and issues no host call.
+  do
+    local host = full_host()
+    local plugin = activate(host)
+    host:run("open", { root = ROOT })
+    host:run("close", {})
+    local updates = #host.updates
+    local again = host:run("close", {})
+    tap.equal(again.changed, false, "second close reports changed=false")
+    tap.equal(#host.updates, updates, "second close issues no host update")
+    tap.equal(#host.mounts, 1, "second close mounts nothing")
+    tap.equal(plugin.listing_state().visible, false, "second close leaves it hidden")
   end
 
   -- Closing with nothing mounted is a no-op: no mount, no update, no raise.
