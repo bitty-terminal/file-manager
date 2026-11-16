@@ -45,13 +45,22 @@ function MockHost.new(options)
   self.settings = options.settings or {}
   self.snapshot_value = options.snapshot
   self.fs_entries = options.fs_entries
+  self.fs_files = options.fs_files
   self.fs_error = options.fs_error
+  self.fs_read_error = options.fs_read_error
   self.fs_calls = {}
+  self.fs_read_calls = {}
   self.commands = {}
   self.subscriptions = {}
   self.mounts = {}
   self.updates = {}
   self.ui_blocks = {}
+  self.panel_enabled = options.panel == true
+  self.panels = {}
+  self.panel_mounts = {}
+  self.panel_updates = {}
+  self.panel_closes = {}
+  self.panel_generation = 1
   self.handle_counter = 0
   self.sequence = 1
   self.bitty = self:build_bitty()
@@ -75,7 +84,7 @@ end
 
 function MockHost:build_bitty()
   local self = self
-  return {
+  local bitty = {
     api_version = "1.0.0",
     commands = {
       register = function(def)
@@ -175,8 +184,93 @@ function MockHost:build_bitty()
         end
         return self.fs_entries[prefix] or {}
       end,
+      read = function(path)
+        self:assert_capability("bitty.fs.read", "fs.read:**")
+        self.fs_read_calls[#self.fs_read_calls + 1] = path
+        if type(self.fs_read_error) == "table" then
+          fail(
+            self.fs_read_error.class or "runtime",
+            self.fs_read_error.code or "E_FS_DENIED",
+            self.fs_read_error.message or "fs read denied"
+          )
+        end
+        if self.fs_files == nil then
+          fail("runtime", "E_NOT_IMPLEMENTED", "bitty.fs.read")
+        end
+        if type(self.fs_files) == "function" then
+          return self.fs_files(path)
+        end
+        local file = self.fs_files[path]
+        if file == nil then
+          fail("runtime", "E_FS_NOT_FOUND", "file not found: " .. tostring(path))
+        end
+        if type(file) == "string" then
+          return { body = file, untrusted = true, redacted = false }
+        end
+        return file
+      end,
     },
   }
+  if self.panel_enabled then
+    bitty.panel = {
+      create = function(spec)
+        self:assert_capability("bitty.panel.create", "panel.create")
+        if type(spec) ~= "table" or spec.type ~= "rich" then
+          fail("validation", "E_DEF_INVALID", "panel.create requires { type = 'rich' }")
+        end
+        local id = self:next_handle()
+        self.panels[id] = { id = id, generation = self.panel_generation, component = nil, open = true }
+        return { id = id, generation = self.panel_generation }
+      end,
+      mount = function(panel_id, component)
+        self:assert_capability("bitty.panel.mount", "ui.rich")
+        if type(panel_id) ~= "number" or type(component) ~= "table" or type(component.kind) ~= "string" then
+          fail("validation", "E_UI_COMPONENT_INVALID", "invalid panel mount")
+        end
+        local entry = self.panels[panel_id]
+        if entry == nil or not entry.open then
+          return false
+        end
+        entry.component = component
+        self.panel_mounts[#self.panel_mounts + 1] = { panel_id = panel_id, component = component }
+        return true
+      end,
+      update = function(panel_id, component)
+        self:assert_capability("bitty.panel.update", "ui.rich")
+        if type(panel_id) ~= "number" or type(component) ~= "table" or type(component.kind) ~= "string" then
+          fail("validation", "E_UI_COMPONENT_INVALID", "invalid panel update")
+        end
+        local entry = self.panels[panel_id]
+        if entry == nil or not entry.open then
+          return false
+        end
+        entry.component = component
+        self.panel_updates[#self.panel_updates + 1] = { panel_id = panel_id, component = component }
+        return true
+      end,
+      unmount = function(panel_id)
+        self:assert_capability("bitty.panel.unmount", "ui.rich")
+        local entry = self.panels[panel_id]
+        if entry == nil or not entry.open then
+          return false
+        end
+        entry.component = nil
+        return true
+      end,
+      close = function(panel_id)
+        self:assert_capability("bitty.panel.close", "panel.focus")
+        local entry = self.panels[panel_id]
+        if entry == nil or not entry.open then
+          return false
+        end
+        entry.open = false
+        entry.component = nil
+        self.panel_closes[#self.panel_closes + 1] = panel_id
+        return true
+      end,
+    }
+  end
+  return bitty
 end
 
 function MockHost:publish(kind, payload)

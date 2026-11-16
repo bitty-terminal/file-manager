@@ -42,14 +42,21 @@ local cache = {
   title = nil,
 }
 
--- Mounted presentation state. One block handle is reused through
--- `bitty.ui.update`; the entry list stays bounded by `listing.lua`.
+-- Mounted presentation state. In panel mode a Dwindle `panel_id` is created
+-- and updated; on older hosts or UI-only mocks one block handle is reused
+-- through `bitty.ui.update`. The entry list stays bounded by `listing.lua`.
 local view = {
   handle = nil,
+  panel_id = nil,
   visible = false,
+  base_root = nil,
   root = nil,
+  all_entries = {},
   entries = {},
   selected = 1,
+  show_hidden = false,
+  preview = nil,
+  status = nil,
   error = nil,
 }
 
@@ -206,6 +213,86 @@ local function name_width()
   return band_width() - scene.MARKER_CHARS
 end
 
+local function has_panel_api()
+  if type(bitty) ~= "table" then
+    return false
+  end
+  ---@diagnostic disable-next-line: undefined-field
+  local panel = bitty.panel
+  return type(panel) == "table"
+    and type(panel.create) == "function"
+    and type(panel.mount) == "function"
+    and type(panel.update) == "function"
+    and type(panel.close) == "function"
+end
+
+local function load_preview()
+  local entry = view.entries[view.selected]
+  if type(entry) ~= "table" then
+    view.preview = nil
+    return
+  end
+  if entry.kind == "dir" then
+    if directory.available() then
+      local sub_entries, err = directory.list(entry.path, { max_entries = scene.MAX_PREVIEW_LINES + 1 })
+      if err == nil then
+        view.preview = { entries = listing.filter_hidden(sub_entries, view.show_hidden) }
+      else
+        view.preview = { error = err }
+      end
+    else
+      view.preview = nil
+    end
+  elseif directory.read_available() then
+    local data, err = directory.read(entry.path)
+    if data ~= nil then
+      view.preview = data
+    else
+      view.preview = { error = err }
+    end
+  else
+    view.preview = nil
+  end
+end
+
+-- Create/mount or update a plugin-owned Dwindle rich panel. A stale panel_id
+-- falls back to a fresh create+mount; capability denials raise typed errors.
+local function mount_panel(component)
+  ---@diagnostic disable-next-line: undefined-field
+  local panel = bitty.panel
+  if view.panel_id ~= nil then
+    local ok, updated = pcall(panel.update, view.panel_id, component)
+    if ok and updated == true then
+      view.visible = true
+      return true, nil
+    end
+    if not ok then
+      return false, typed_error(updated)
+    end
+    view.panel_id = nil
+  end
+  local ok, created = pcall(panel.create, { type = "rich" })
+  if not ok then
+    return false, typed_error(created)
+  end
+  local panel_id = type(created) == "table" and created.id or created
+  if type(panel_id) ~= "number" then
+    return false, typed_error(nil, "E_UI_UNAVAILABLE")
+  end
+  local mount_ok, mounted = pcall(panel.mount, panel_id, component)
+  if not mount_ok then
+    pcall(panel.close, panel_id)
+    return false, typed_error(mounted)
+  end
+  if mounted == false then
+    pcall(panel.close, panel_id)
+    return false, typed_error(nil, "E_UI_UNAVAILABLE")
+  end
+  view.panel_id = panel_id
+  view.visible = true
+  return true, nil
+end
+
 -- Mount or update the bounded declarative block. A stale/foreign handle falls
 -- back to a fresh mount; a denied `ui.rich` raises the host's typed error.
 local function mount_component(component)
@@ -234,6 +321,24 @@ local function mount_component(component)
 end
 
 local function render()
+  if has_panel_api() then
+    load_preview()
+    local component = scene.panel(view.entries, {
+      root = view.root,
+      selected = view.selected,
+      show_hidden = view.show_hidden,
+      preview = view.preview,
+      status = view.status,
+      error = view.error,
+      width = band_width(),
+      name_width = name_width(),
+    })
+    local ok, err = mount_panel(component)
+    if not ok then
+      error(err, 0)
+    end
+    return true
+  end
   local component = scene.listing(view.entries, {
     root = view.root,
     selected = view.selected,
@@ -280,15 +385,24 @@ local function selected_index(args, count, root_changed)
   return clamp_selection(count, selected)
 end
 
+local function apply_hidden_filter()
+  view.entries = listing.filter_hidden(view.all_entries, view.show_hidden)
+  view.selected = clamp_selection(#view.entries, view.selected)
+end
+
 -- Open a bounded listing from the observed cwd (host-mediated `fs.list`) or
--- from explicit settings/args candidates. The mounted block is the primary
--- surface; `true` suppresses the boolean-acknowledgement banner.
+-- from explicit settings/args candidates. The mounted panel/block is the
+-- primary surface; `true` suppresses the boolean-acknowledgement banner.
 local function open_entries(args)
   args = args or {}
   refresh_cache_safely()
   local root = resolved_root(args, nil)
   local root_changed = root ~= view.root
+  if view.base_root == nil or root == nil or not scope.is_within_root(view.base_root, root) then
+    view.base_root = root
+  end
   view.root = root
+  view.status = nil
 
   local entries = {}
   local list_error = nil
@@ -305,9 +419,10 @@ local function open_entries(args)
     entries, list_error = directory.list(root, { max_entries = listing.MAX_ENTRIES })
   end
 
-  view.entries = entries
+  view.all_entries = entries
+  view.entries = listing.filter_hidden(entries, view.show_hidden)
   view.error = list_error
-  view.selected = selected_index(args, #entries, root_changed)
+  view.selected = selected_index(args, #view.entries, root_changed)
   return render()
 end
 
@@ -327,7 +442,19 @@ end
 -- separately from the reused `handle`, which stays non-nil after a close.
 local function close_listing()
   if not view.visible then
-    return { changed = false, handle = view.handle }
+    return { changed = false, handle = view.handle, panel_id = view.panel_id }
+  end
+  if view.panel_id ~= nil and has_panel_api() then
+    ---@diagnostic disable-next-line: undefined-field
+    local panel = bitty.panel
+    local ok, closed = pcall(panel.close, view.panel_id)
+    if not ok then
+      error(typed_error(closed, "E_UI_UNAVAILABLE"), 0)
+    end
+    local previous = view.panel_id
+    view.panel_id = nil
+    view.visible = false
+    return { changed = closed ~= false, handle = view.handle, panel_id = previous }
   end
   local ui = bitty.ui
   if type(ui) ~= "table" or type(ui.update) ~= "function" then
@@ -344,7 +471,7 @@ local function close_listing()
     view.handle = nil
   end
   view.visible = false
-  return { changed = true, handle = view.handle }
+  return { changed = true, handle = view.handle, panel_id = nil }
 end
 
 -- Resolve one preview entry. Without `path`, the currently selected listing
@@ -480,13 +607,96 @@ bitty.events.subscribe("focus.changed", function(_event)
   pcall(refresh_cache)
 end)
 
+local function move_selection(delta)
+  if #view.entries == 0 then
+    return
+  end
+  local next_index = clamp_selection(#view.entries, view.selected + delta)
+  if next_index ~= view.selected then
+    view.selected = next_index
+    render()
+  end
+end
+
+local function handle_panel_input(event)
+  local payload = type(event) == "table" and (type(event.payload) == "table" and event.payload or event) or nil
+  if type(payload) ~= "table" or not view.visible or view.panel_id == nil then
+    return
+  end
+  if payload.panel_id ~= view.panel_id then
+    return
+  end
+  if payload.kind == "wheel" then
+    local delta = payload.delta
+    local num = tonumber(delta)
+    if delta == "up" or (num ~= nil and num < 0) then
+      move_selection(-1)
+    elseif delta == "down" or (num ~= nil and num > 0) then
+      move_selection(1)
+    end
+    return
+  end
+  if payload.kind ~= "key" then
+    return
+  end
+  if payload.ctrl or payload.alt or payload.super then
+    return
+  end
+  local key = type(payload.key) == "string" and payload.key or ""
+  local lower = string.lower(key)
+  local ch = type(payload.text) == "string" and payload.text ~= "" and payload.text or key
+
+  if ch == "j" or lower == "down" then
+    move_selection(1)
+  elseif ch == "k" or lower == "up" then
+    move_selection(-1)
+  elseif lower == "enter" or lower == "return" or ch == "l" or lower == "right" then
+    local selected = view.entries[view.selected]
+    if type(selected) == "table" then
+      if selected.kind == "dir" then
+        open_entries({ root = selected.path, selected = 1 })
+      else
+        preview_entry({ path = selected.path })
+      end
+    end
+  elseif lower == "backspace" or ch == "h" or lower == "left" then
+    if type(view.base_root) == "string" and type(view.root) == "string" then
+      local parent = scope.parent_dir(view.base_root, view.root)
+      if parent ~= nil then
+        open_entries({ root = parent, selected = 1 })
+      end
+    end
+  elseif ch == "." or lower == "period" then
+    view.show_hidden = not view.show_hidden
+    apply_hidden_filter()
+    render()
+  elseif ch == "r" then
+    if view.root ~= nil then
+      open_entries({ root = view.root, selected = view.selected })
+    end
+  elseif ch == "q" then
+    close_listing()
+  end
+end
+
+-- Subscribe to `panel.input` when the host exposes it; older hosts or
+-- manifest-strict hosts without `panel.input` in the v1 closed event set
+-- fail `subscribe` cleanly under `pcall`.
+---@diagnostic disable-next-line: param-type-mismatch
+pcall(bitty.events.subscribe, "panel.input", handle_panel_input)
+
 function M.listing_state()
   return {
+    base_root = view.base_root,
     root = view.root,
     entries = view.entries,
     selected = view.selected,
+    show_hidden = view.show_hidden,
+    preview = view.preview,
+    status = view.status,
     error = view.error,
     handle = view.handle,
+    panel_id = view.panel_id,
     visible = view.visible,
   }
 end

@@ -84,6 +84,22 @@ listing, navigation, and preview for a caller-chosen root`. The previous
 
 ### Added
 
+- **Dwindle Panel Mode (CTX-0012, #43):** `open` now creates and mounts into a
+  plugin-owned Dwindle tiling panel (`bitty.panel.create({ type = "rich" })` +
+  `bitty.panel.mount`), updates it via `bitty.panel.update`, and closes cleanly
+  via `bitty.panel.close` (with idempotent `close`). Hosts without `bitty.panel`
+  fall back cleanly to the `bottom` band (`bitty.ui.mount` / `bitty.ui.update`).
+- **Nautilus / Dolphin / Yazi-style Panel UI & Live Preview:** added
+  `scene.panel`, `scene.header_bar`, and `scene.preview_pane` with breadcrumb
+  path, item count, hidden-files indicator, `[DIR]`/`[FILE]`/`[LINK]` badges,
+  formatted sizes, and a live split preview pane powered by `bitty.fs.read` and
+  `bitty.fs.list`.
+- **Focus-Driven `panel.input` Navigation:** subscribed to `panel.input` (under
+  `pcall` for compatibility with older hosts) for `j`/`Down`, `k`/`Up`, wheel,
+  `Enter`/`l`/`Right`, `Backspace`/`h`/`Left` (scope-bounded), `.` (toggle
+  hidden dotfiles), `r` (refresh), and `q` (close).
+- **Manifest capabilities:** added `panel.create = true` and `panel.focus = true`
+  to `bitty-plugin.toml` and `validator-negative/base.toml`.
 - **`close` command:** the mounted `bottom` band listing can now be hidden.
   The block is non-focusable, so `Esc` never reached the plugin and the host
   offers no chrome affordance for a mounted block; without this command an

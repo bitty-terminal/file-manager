@@ -26,19 +26,25 @@ plugin-api = "^1.0"
 # Deny by default: omit this table entirely when the plugin needs no authority.
 # Unknown identifiers fail validation and there is no allow-all identifier.
 #
-# H-FM-02 (least privilege): three read-only grants, each exercised by code.
+# H-FM-02 (least privilege): read-only grants plus panel lifecycle/focus,
+# each exercised by code.
 # - `terminal.semantic-read` gates `bitty.terminal.snapshot`, the read-only
 #   cwd/title observation the cache and default band width refresh from.
-# - `ui.rich` gates `bitty.ui.mount`/`bitty.ui.update`, the declarative
-#   `bottom` band block that renders the listing (`scene.lua`).
+# - `ui.rich` gates `bitty.panel.mount`/`update` (and `bitty.ui.mount`/`update`
+#   fallback), the declarative rich UI scene (`scene.lua`).
+# - `panel.create` gates `bitty.panel.create({ type = "rich" })` for Dwindle
+#   tiling panel creation.
+# - `panel.focus` gates `bitty.panel.close` for panel dismissal.
 # - `fs.read:**` (through `[[capabilities.filesystem]]` below) gates
-#   `bitty.fs.list`, the host-mediated directory enumeration `open` reads.
-#   `list` is read-class (RFC-0005); there is no write, process, network,
+#   `bitty.fs.list` and `bitty.fs.read`, the host-mediated directory enumeration
+#   and bounded file preview reads. There is no write, process, network,
 #   clipboard, or terminal-input grant. The relative pattern keeps the grant
 #   in the accepted capability grammar; the host still applies its scope,
 #   sensitive-path, secret, and budget gates to every listed prefix.
 terminal.semantic-read = true
 ui.rich = true
+panel.create = true
+panel.focus = true
 
 [[capabilities.filesystem]]
 # Read-only listing authority for the observed cwd. No `fs.write` request:

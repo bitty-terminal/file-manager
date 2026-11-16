@@ -22,10 +22,38 @@ M.DEFAULT_NAME_CHARS = 32
 M.MIN_NAME_CHARS = 8
 M.MAX_NAME_CHARS = listing.MAX_NAME_CHARS
 M.MAX_VISIBLE_ROWS = 12
+M.MAX_PANEL_ROWS = 20
+M.MAX_PREVIEW_LINES = 12
+M.DEFAULT_PREVIEW_WIDTH = 48
 M.SELECTED_FG = "accent"
 M.DIRECTORY_MARKER = "▸ "
 M.FILE_MARKER = "  "
 M.MARKER_CHARS = 2
+
+local KIND_BADGES = {
+  dir = "[DIR]",
+  file = "[FILE]",
+  symlink = "[LINK]",
+  other = "[OTHER]",
+}
+
+function M.kind_badge(kind)
+  return KIND_BADGES[kind] or KIND_BADGES.file
+end
+
+function M.format_size(bytes)
+  if type(bytes) ~= "number" or bytes < 0 then
+    return nil
+  end
+  bytes = math.floor(bytes)
+  if bytes < 1024 then
+    return string.format("%dB", bytes)
+  end
+  if bytes < 1024 * 1024 then
+    return string.format("%.1fK", bytes / 1024)
+  end
+  return string.format("%.1fM", bytes / (1024 * 1024))
+end
 
 -- Clamp an integer-ish width into the accepted display range.
 local function bounded_width(width)
@@ -92,7 +120,28 @@ function M.entry_row(entry, opts)
   label.fg = selected and M.SELECTED_FG or nil
   label.bold = selected or nil
   label.on_click = on_click
-  local row = { kind = "Row", children = { label } }
+  local row_children = {}
+  if opts.show_badge then
+    row_children[#row_children + 1] = {
+      kind = "Text",
+      text = M.kind_badge(entry.kind) .. " ",
+      fg = selected and M.SELECTED_FG or nil,
+      bold = selected or nil,
+      on_click = on_click,
+    }
+  end
+  row_children[#row_children + 1] = label
+  local size_text = M.format_size(entry.size)
+  if size_text ~= nil then
+    row_children[#row_children + 1] = {
+      kind = "Text",
+      text = " " .. size_text,
+      fg = selected and M.SELECTED_FG or nil,
+      bold = selected or nil,
+      on_click = on_click,
+    }
+  end
+  local row = { kind = "Row", children = row_children }
   row.fg = selected and M.SELECTED_FG or nil
   row.bold = selected or nil
   row.on_click = on_click
@@ -224,6 +273,199 @@ function M.preview(entry, opts)
       text("kind: " .. kind, { max_chars = width }),
       text("path: " .. tostring(entry.path or ""), { max_chars = width }),
       text("parent: " .. tostring(parent), { max_chars = width }),
+    },
+  }
+end
+
+-- Header bar for panel mode: breadcrumb/path, item count, hidden indicator,
+-- and optional status/error banner.
+function M.header_bar(opts)
+  opts = opts or {}
+  local width = bounded_width(opts.width)
+  local count = math.floor(tonumber(opts.count) or 0)
+  local noun = count == 1 and "item" or "items"
+  local hidden_label = opts.show_hidden and "[hidden: on]" or "[hidden: off]"
+  local root_text = tostring(opts.root or "(no root)")
+  local children = {
+    {
+      kind = "Row",
+      children = {
+        text(root_text, { bold = true, fg = M.SELECTED_FG, max_chars = width }),
+        text(" · " .. string.format("%d %s", count, noun), { max_chars = 24 }),
+        text(" · " .. hidden_label, { max_chars = 20 }),
+      },
+    },
+  }
+  if type(opts.error) == "table" then
+    local code = tostring(opts.error.code or "E_FS_UNAVAILABLE")
+    local message = tostring(opts.error.message or "")
+    children[#children + 1] = text("Error: " .. code .. ": " .. message, {
+      bold = true,
+      max_chars = width + 24,
+    })
+  elseif type(opts.status) == "string" and opts.status ~= "" then
+    children[#children + 1] = text(opts.status, { max_chars = width + 24 })
+  end
+  return { kind = "Column", children = children }
+end
+
+-- Right-hand split preview pane inside the Dwindle panel.
+function M.preview_pane(selected_entry, preview_data, opts)
+  opts = opts or {}
+  local preview_width = bounded_width(opts.preview_width or M.DEFAULT_PREVIEW_WIDTH)
+  if type(selected_entry) ~= "table" then
+    return {
+      kind = "Column",
+      children = {
+        text("Preview", { bold = true, max_chars = preview_width }),
+        text("No entry selected", { max_chars = preview_width }),
+      },
+    }
+  end
+
+  local badge = M.kind_badge(selected_entry.kind)
+  local title_name = M.format_name(selected_entry.name, preview_width)
+  local children = {
+    text(badge .. " " .. title_name, { bold = true, fg = M.SELECTED_FG, max_chars = preview_width }),
+    text(tostring(selected_entry.path or ""), { max_chars = preview_width }),
+  }
+  local size_text = M.format_size(selected_entry.size)
+  if size_text ~= nil then
+    children[#children + 1] = text("size: " .. size_text, { max_chars = preview_width })
+  end
+
+  if selected_entry.kind == "dir" then
+    if type(preview_data) == "table" and type(preview_data.entries) == "table" then
+      local dir_entries = preview_data.entries
+      local noun = #dir_entries == 1 and "item" or "items"
+      children[#children + 1] = text(string.format("Directory (%d %s)", #dir_entries, noun), {
+        bold = true,
+        max_chars = preview_width,
+      })
+      if #dir_entries == 0 then
+        children[#children + 1] = text("(empty directory)", { max_chars = preview_width })
+      else
+        local limit = math.min(#dir_entries, M.MAX_PREVIEW_LINES)
+        for index = 1, limit do
+          local child = dir_entries[index]
+          children[#children + 1] = text(
+            M.kind_badge(child.kind) .. " " .. tostring(child.name or ""),
+            { max_chars = preview_width }
+          )
+        end
+        if #dir_entries > limit then
+          children[#children + 1] = text(string.format("… +%d more", #dir_entries - limit), {
+            max_chars = preview_width,
+          })
+        end
+      end
+    elseif type(preview_data) == "table" and type(preview_data.error) == "table" then
+      children[#children + 1] = text(
+        tostring(preview_data.error.code or "E_FS_UNAVAILABLE")
+          .. ": "
+          .. tostring(preview_data.error.message or ""),
+        { max_chars = preview_width }
+      )
+    else
+      children[#children + 1] = text("Directory", { max_chars = preview_width })
+    end
+  else
+    if type(preview_data) == "table" and type(preview_data.lines) == "table" then
+      local lines = preview_data.lines
+      if #lines == 0 then
+        children[#children + 1] = text("(empty file)", { max_chars = preview_width })
+      else
+        local limit = math.min(#lines, M.MAX_PREVIEW_LINES)
+        for index = 1, limit do
+          children[#children + 1] = text(lines[index], { max_chars = preview_width })
+        end
+        if preview_data.truncated or #lines > limit then
+          children[#children + 1] = text("… (truncated)", { max_chars = preview_width })
+        end
+      end
+    elseif type(preview_data) == "table" and type(preview_data.error) == "table" then
+      children[#children + 1] = text(
+        tostring(preview_data.error.code or "E_FS_UNAVAILABLE")
+          .. ": "
+          .. tostring(preview_data.error.message or ""),
+        { max_chars = preview_width }
+      )
+    else
+      children[#children + 1] = text("No file preview available", { max_chars = preview_width })
+    end
+  end
+
+  return { kind = "Column", children = children }
+end
+
+-- Nautilus / Dolphin / Yazi-style Dwindle panel scene with header bar,
+-- entry list with type badges & selection highlight, and live split preview.
+function M.panel(entries, opts)
+  opts = opts or {}
+  entries = type(entries) == "table" and entries or {}
+  local root = opts.root or ""
+  local width = bounded_width(opts.width)
+  local name_width = bounded_width(opts.name_width or (width - M.MARKER_CHARS))
+  local max_rows = opts.max_rows or M.MAX_PANEL_ROWS
+  local selected = opts.selected or 1
+  if selected < 1 then
+    selected = 1
+  end
+  if #entries > 0 and selected > #entries then
+    selected = #entries
+  end
+
+  local header = M.header_bar({
+    root = root,
+    count = #entries,
+    show_hidden = opts.show_hidden == true,
+    error = opts.error,
+    status = opts.status,
+    width = width,
+  })
+
+  local left_pane
+  local first, last = M.visible_window(#entries, selected, max_rows)
+  if opts.error ~= nil and #entries == 0 then
+    left_pane = M.error(opts.error, root, { width = width })
+  elseif #entries == 0 then
+    left_pane = M.empty(root, { width = width })
+  else
+    local rows = {}
+    for index = first, last do
+      local entry = entries[index]
+      local row = M.entry_row(entry, {
+        name_width = name_width,
+        selected = index == selected,
+        show_badge = true,
+      })
+      rows[#rows + 1] = row
+    end
+    left_pane = { kind = "Column", children = { { kind = "List", children = rows } } }
+  end
+
+  local selected_entry = #entries > 0 and entries[selected] or nil
+  local right_pane = M.preview_pane(selected_entry, opts.preview, {
+    preview_width = opts.preview_width or M.DEFAULT_PREVIEW_WIDTH,
+  })
+
+  local footer_text = "j/k:move  Enter/l:open  h/Bs:up  .:hidden  r:refresh  q:close"
+  if #entries > 0 and (last > first or #entries > (last - first + 1)) then
+    footer_text = string.format("rows %d-%d/%d · %s", first, last, #entries, footer_text)
+  end
+
+  return {
+    kind = "Column",
+    children = {
+      header,
+      {
+        kind = "Row",
+        children = {
+          left_pane,
+          right_pane,
+        },
+      },
+      text(footer_text, { max_chars = width + M.DEFAULT_PREVIEW_WIDTH }),
     },
   }
 end

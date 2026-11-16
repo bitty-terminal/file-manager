@@ -28,6 +28,7 @@ for _, suite in ipairs({
   "spec.directory_spec",
   "spec.scene_spec",
   "spec.init_spec",
+  "spec.panel_spec",
 }) do
   local ok, err = pcall(function()
     require(suite).run(context)
